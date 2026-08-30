@@ -56,7 +56,7 @@ fi
 
 versioned_appimage="$work_dir/AnycubicSlicer-${app_version}-x86_64.AppImage"
 latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"
-ARCH=x86_64 "$appimage_tool" "$app_dir" "$versioned_appimage"
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" "$app_dir" "$versioned_appimage"
 cp "$versioned_appimage" "$latest_appimage"
 zsyncmake "$latest_appimage" -o "$latest_appimage.zsync"
 
