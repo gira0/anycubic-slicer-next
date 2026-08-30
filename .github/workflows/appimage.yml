@@ -1,0 +1,93 @@
+name: Build Anycubic Slicer AppImage
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    outputs:
+      app_version: ${{ steps.version.outputs.app_version }}
+      should_build: ${{ steps.release.outputs.should_build }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y binutils curl
+
+      - name: Detect published application version
+        id: version
+        run: ./appimage/check-latest.sh
+
+      - name: Check release completeness
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+        run: |
+          required_assets=$(printf '%s\n' \
+            "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage" \
+            "AnycubicSlicer-x86_64.AppImage" \
+            "AnycubicSlicer-x86_64.AppImage.zsync")
+
+          if ! assets=$(gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null); then
+            echo "No release exists for $APP_VERSION."
+            echo 'should_build=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          missing_assets=$(comm -23 <(printf '%s\n' "$required_assets" | sort) <(printf '%s\n' "$assets" | sort))
+          if [[ -n "$missing_assets" ]]; then
+            echo "Release $APP_VERSION is incomplete; missing:"
+            printf '%s\n' "$missing_assets"
+            echo 'should_build=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $APP_VERSION is complete; skipping build."
+            echo 'should_build=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-release:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y binutils curl zsync
+
+      - name: Build latest AppImage
+        id: build
+        run: ./appimage/build-latest.sh
+
+      - name: Publish release when the app version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          VERSIONED_APPIMAGE: ${{ steps.build.outputs.versioned_appimage }}
+          LATEST_APPIMAGE: ${{ steps.build.outputs.latest_appimage }}
+          ZSYNC: ${{ steps.build.outputs.zsync }}
+        run: |
+          if gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$APP_VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber \
+              "$VERSIONED_APPIMAGE" \
+              "$LATEST_APPIMAGE" \
+              "$ZSYNC"
+          else
+            gh release create "$APP_VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$APP_VERSION" \
+              --notes "Anycubic Slicer Next as AppImage. The AppImage includes AppImageUpdate metadata." \
+              "$VERSIONED_APPIMAGE" \
+              "$LATEST_APPIMAGE" \
+              "$ZSYNC"
+          fi
