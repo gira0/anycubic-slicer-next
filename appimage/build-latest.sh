@@ -3,6 +3,7 @@ set -euo pipefail
 
 apt_base_url="${APT_BASE_URL:-https://cdn-universe-slicer.anycubic.com/prod}"
 packages_url="$apt_base_url/dists/noble/main/binary-amd64/Packages"
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 work_dir="${RUNNER_TEMP:-/tmp}/anycubic-slicer-build"
 deb_path="$work_dir/anycubicslicernext.deb"
 app_dir="$work_dir/AnycubicSlicer.AppDir"
@@ -28,6 +29,10 @@ ar x "$deb_path"
 tar -xf data.tar.*
 cp -a usr/. "$app_dir/"
 
+cp "$script_dir/AppRun" "$app_dir/AppRun"
+chmod +x "$app_dir/AppRun"
+cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
+
 binary="$app_dir/bin/AnycubicSlicerNext"
 app_version=$(strings "$binary" | grep -oE 'AnycubicSlicerNext/[0-9]+(\.[0-9]+)+' | head -n1 | cut -d/ -f2)
 if [[ -z "$app_version" ]]; then
@@ -35,10 +40,18 @@ if [[ -z "$app_version" ]]; then
     exit 1
 fi
 
-desktop_file="$app_dir/share/applications/AnycubicSlicer.desktop"
-if [[ ! -f "$desktop_file" ]]; then
-    echo "Expected desktop file was not found: $desktop_file" >&2
+source_desktop_file="$app_dir/share/applications/AnycubicSlicer.desktop"
+if [[ ! -f "$source_desktop_file" ]]; then
+    echo "Expected desktop file was not found: $source_desktop_file" >&2
     exit 1
+fi
+
+desktop_file="$app_dir/AnycubicSlicer.desktop"
+cp "$source_desktop_file" "$desktop_file"
+
+icon_file="$app_dir/share/AnycubicSlicerNext/resources/images/AnycubicSlicer.png"
+if [[ -f "$icon_file" ]]; then
+    cp "$icon_file" "$app_dir/AnycubicSlicer.png"
 fi
 
 update_information='X-AppImage-UpdateInformation=gh-releases-zsync|develonrails|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
