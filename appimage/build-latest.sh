@@ -55,7 +55,7 @@ if [[ -f "$icon_file" ]]; then
     cp "$icon_file" "$app_dir/AnycubicSlicer.png"
 fi
 
-update_information='X-AppImage-UpdateInformation=gh-releases-zsync|develonrails|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
+update_information='X-AppImage-UpdateInformation=gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
 if grep -q '^X-AppImage-UpdateInformation=' "$desktop_file"; then
     sed -i "s|^X-AppImage-UpdateInformation=.*|$update_information|" "$desktop_file"
 else

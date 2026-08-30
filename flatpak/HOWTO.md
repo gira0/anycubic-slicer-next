@@ -138,12 +138,12 @@ flatpak uninstall --user com.anycubic.AnycubicSlicer
 ```bash
 # Add the flatpak to an existing release
 gh release upload "${APP_VERSION}" \
-  --repo develonrails/anycubic-slicer-next \
+  --repo gira0/anycubic-slicer-next \
   "AnycubicSlicer-${APP_VERSION}.flatpak"
 
 # Or create a new release with both AppImage and Flatpak
 gh release create "${APP_VERSION}" \
-  --repo develonrails/anycubic-slicer-next \
+  --repo gira0/anycubic-slicer-next \
   --title "${APP_VERSION}" \
   --notes "Anycubic Slicer Next as AppImage and Flatpak." \
   "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage" \
@@ -256,7 +256,7 @@ flatpak build-bundle repo "AnycubicSlicer-${APP_VERSION}.flatpak" \
 
 ## GitHub Repository
 
-Releases are published to: https://github.com/develonrails/anycubic-slicer-next
+Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
 - **Tag/Title**: The app version (e.g. `1.3.9.3`)

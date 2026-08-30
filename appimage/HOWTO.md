@@ -224,7 +224,7 @@ If fonts return 1, everything is working correctly!
 
 ```bash
 gh release create "${APP_VERSION}" \
-  --repo develonrails/anycubic-slicer-next \
+  --repo gira0/anycubic-slicer-next \
   --title "${APP_VERSION}" \
   --notes "Anycubic Slicer Next as AppImage." \
   "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
@@ -354,7 +354,7 @@ undefined symbol: g_once_init_leave_pointer
 
 ## GitHub Repository
 
-Releases are published to: https://github.com/develonrails/anycubic-slicer-next
+Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
 - **Tag/Title**: The app version (e.g. `1.3.9.3`)

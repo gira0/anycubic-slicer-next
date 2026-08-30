@@ -1,10 +1,10 @@
 # Anycubic Slicer Next
 
-[![GitHub release](https://img.shields.io/github/release/develonrails/anycubic-slicer-next.svg)](https://github.com/develonrails/anycubic-slicer-next/releases)
+[![GitHub release](https://img.shields.io/github/release/gira0/anycubic-slicer-next.svg)](https://github.com/gira0/anycubic-slicer-next/releases)
 
 Linux Flatpak and AppImage packages for Anycubic Slicer Next.
 
-Download at [releases](https://github.com/develonrails/anycubic-slicer-next/releases) page.
+Download at the [releases](https://github.com/gira0/anycubic-slicer-next/releases) page.
 
 ## AppImage
 
@@ -52,6 +52,6 @@ The Flatpak build instructions are in [flatpak/HOWTO.md](flatpak/HOWTO.md).
 The AppImage build instructions, including dependencies and troubleshooting, are
 in [appimage/HOWTO.md](appimage/HOWTO.md).
 
-Packages are published in the [GitHub releases](https://github.com/develonrails/anycubic-slicer-next/releases) section.
+Packages are published in the [GitHub releases](https://github.com/gira0/anycubic-slicer-next/releases) section.
 
 If this helps you please star the repo or support me on Ko-fi.
