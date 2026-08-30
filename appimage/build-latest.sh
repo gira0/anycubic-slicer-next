@@ -48,6 +48,7 @@ fi
 
 desktop_file="$app_dir/AnycubicSlicer.desktop"
 cp "$source_desktop_file" "$desktop_file"
+sed -i 's|^Icon=.*|Icon=AnycubicSlicer|' "$desktop_file"
 
 icon_file="$app_dir/share/AnycubicSlicerNext/resources/images/AnycubicSlicer.png"
 if [[ -f "$icon_file" ]]; then
