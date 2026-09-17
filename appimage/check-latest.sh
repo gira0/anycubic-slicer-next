@@ -19,14 +19,9 @@ if [[ -z "$deb_filename" ]]; then
 fi
 
 curl -fsSL -o "$deb_path" "$apt_base_url/$deb_filename"
-mkdir -p "$work_dir/extracted"
-cd "$work_dir/extracted"
-ar x "$deb_path"
-tar -xf data.tar.*
-
-app_version=$(strings usr/bin/AnycubicSlicerNext | grep -oE 'AnycubicSlicerNext/[0-9]+(\.[0-9]+)+' | head -n1 | cut -d/ -f2)
+app_version=$(dpkg-deb -f "$deb_path" Version)
 if [[ -z "$app_version" ]]; then
-    echo "Could not determine the application version" >&2
+    echo "Could not determine the application version from $deb_path" >&2
     exit 1
 fi
 
