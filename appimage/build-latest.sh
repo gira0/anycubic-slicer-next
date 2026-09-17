@@ -23,6 +23,12 @@ if [[ -z "$deb_filename" ]]; then
 fi
 
 curl -fsSL -o "$deb_path" "$apt_base_url/$deb_filename"
+app_version=$(dpkg-deb -f "$deb_path" Version)
+if [[ -z "$app_version" ]]; then
+    echo "Could not determine the application version from $deb_path" >&2
+    exit 1
+fi
+
 mkdir -p "$work_dir/extracted"
 cd "$work_dir/extracted"
 ar x "$deb_path"
@@ -32,13 +38,6 @@ cp -a usr/. "$app_dir/"
 cp "$script_dir/AppRun" "$app_dir/AppRun"
 chmod +x "$app_dir/AppRun"
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
-
-binary="$app_dir/bin/AnycubicSlicerNext"
-app_version=$(strings "$binary" | grep -oE 'AnycubicSlicerNext/[0-9]+(\.[0-9]+)+' | head -n1 | cut -d/ -f2)
-if [[ -z "$app_version" ]]; then
-    echo "Could not determine the application version from $binary" >&2
-    exit 1
-fi
 
 source_desktop_file="$app_dir/share/applications/AnycubicSlicer.desktop"
 if [[ ! -f "$source_desktop_file" ]]; then
