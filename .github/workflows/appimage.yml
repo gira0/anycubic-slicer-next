@@ -13,6 +13,7 @@ jobs:
     outputs:
       app_version: ${{ steps.version.outputs.app_version }}
       should_build: ${{ steps.release.outputs.should_build }}
+      should_build_cloud_video: ${{ steps.prerelease.outputs.should_build }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -49,6 +50,33 @@ jobs:
             echo 'should_build=true' >> "$GITHUB_OUTPUT"
           else
             echo "Release $APP_VERSION is complete; skipping build."
+            echo 'should_build=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check cloud-video pre-release completeness
+        id: prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+        run: |
+          required_assets=$(printf '%s\n' \
+            "AnycubicSlicer-${APP_VERSION}-cloud-video-x86_64.AppImage" \
+            "AnycubicSlicer-cloud-video-x86_64.AppImage" \
+            "AnycubicSlicer-cloud-video-x86_64.AppImage.zsync")
+
+          if ! assets=$(gh release view cloud-video --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null); then
+            echo "No cloud-video pre-release exists."
+            echo 'should_build=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          missing_assets=$(comm -23 <(printf '%s\n' "$required_assets" | sort) <(printf '%s\n' "$assets" | sort))
+          if [[ -n "$missing_assets" ]]; then
+            echo "cloud-video pre-release is not up to date for $APP_VERSION; missing:"
+            printf '%s\n' "$missing_assets"
+            echo 'should_build=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "cloud-video pre-release is up to date for $APP_VERSION; skipping build."
             echo 'should_build=false' >> "$GITHUB_OUTPUT"
           fi
 
@@ -91,3 +119,62 @@ jobs:
               "$LATEST_APPIMAGE" \
               "$ZSYNC"
           fi
+
+  build-cloud-video-prerelease:
+    needs: check
+    if: needs.check.outputs.should_build_cloud_video == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y binutils curl libfuse2t64 zsync
+
+      - name: Build patched AppImage (cloud video)
+        id: build
+        env:
+          VARIANT: cloud-video
+        run: ./appimage/build-latest.sh
+
+      - name: Publish rolling cloud-video pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          VERSIONED_APPIMAGE: ${{ steps.build.outputs.versioned_appimage }}
+          LATEST_APPIMAGE: ${{ steps.build.outputs.latest_appimage }}
+          ZSYNC: ${{ steps.build.outputs.zsync }}
+        run: |
+          notes="Patched, unofficial build of Anycubic Slicer Next ${APP_VERSION} with cloud-connected video monitoring enabled on Linux (see CLAUDE.md). Rolling pre-release: the assets are replaced when a new application version is published. The AppImage updates itself from this release."
+          if gh release view cloud-video --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload cloud-video \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber \
+              "$VERSIONED_APPIMAGE" \
+              "$LATEST_APPIMAGE" \
+              "$ZSYNC"
+            gh release edit cloud-video \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "cloud-video (${APP_VERSION})" \
+              --notes "$notes"
+          else
+            gh release create cloud-video \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "cloud-video (${APP_VERSION})" \
+              --notes "$notes" \
+              "$VERSIONED_APPIMAGE" \
+              "$LATEST_APPIMAGE" \
+              "$ZSYNC"
+          fi
+
+          # Drop patched AppImages of older application versions.
+          current=$(basename "$VERSIONED_APPIMAGE")
+          gh release view cloud-video --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+            grep -E '^AnycubicSlicer-.+-cloud-video-x86_64\.AppImage$' |
+            { grep -vxF "$current" || true; } |
+            while read -r old; do
+              gh release delete-asset cloud-video "$old" --repo "$GITHUB_REPOSITORY" --yes
+            done
