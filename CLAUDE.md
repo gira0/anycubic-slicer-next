@@ -1,11 +1,11 @@
 # CLAUDE.md
 
 Read `AGENTS.md` first for project scope, AppImage automation, validation and
-release-safety rules. This file records the cloud video investigation and patch.
+release-safety rules. This file records the investigation into cloud-connected
+video monitoring on Linux. **Outcome: not achievable with the packaging as it
+stands; nothing is patched.** Read this before trying again.
 
-## Cloud video patch (AppImage)
-
-### Problem
+## Problem
 
 For cloud-connected printers the Workbench video slot shows:
 
@@ -14,35 +14,37 @@ For cloud-connected printers the Workbench video slot shows:
 
 Upstream never fixed this on Linux, although Windows and macOS play cloud video.
 
-### Findings
+## Findings
 
 Investigated by decompiling the Anycubic Android app
-(`Anycubic_1.1.27_APKPure.apk`, untracked and 150 MB; never commit it) and by
-unpacking the slicer's `lib/libWorkbench.so`.
+(`Anycubic_1.1.27_APKPure.apk`, 150 MB, git-ignored; never commit it) and by
+unpacking the slicer's `lib/libWorkbench.so`. Version tested: slicer 2.0.0.5.
 
-**The slicer already contains working cloud video.** The Workbench is a Vue web
-app shown in a wxWebView (WebKitGTK). It is not remote: it is a zip archive
-embedded in `lib/libWorkbench.so`, at the offset found from the zip
-end-of-central-directory record (about 39 MB, 288 entries). The video slot is
-`js/src_views_workbench2_WorkbenchV3_vue.js` in that archive. It bundles both
-cloud backends the Android app uses:
+### Where the video code lives
+
+The Workbench is a Vue web app shown in a wxWebView (WebKitGTK). It is not
+remote: it is a zip archive embedded in `lib/libWorkbench.so` (about 39 MB, 288
+entries, mostly deflated). Find it from the last `PK\x05\x06` record:
+`zip_start = eocd - cd_size - cd_offset`, then open `data[zip_start:]` with
+`zipfile`. The video slot is `js/src_views_workbench2_WorkbenchV3_vue.js`.
+
+It contains both cloud backends the Android app uses:
 
 | Backend | Slicer code | Android app code |
 | --- | --- | --- |
 | Shengwang (Agora) RTC | `AgoraConnectionManager`, `agora-rtc-sdk-ng` | `com.anycubic.lib.video.agora.*`, `ShengwangTokenBean` |
 | AWS Kinesis Video WebRTC | `WebRTCConnectionManager`, `startAwsStream` | `com.anycubic.lib.video.kvs.*`, `PeerConnectionClient` |
 
-Both clients use the same REST call: the slicer posts to
-`/work/operation/sendOrder` with `{order_id: 1001, printer_id, shengwang_rtc_support}`,
-and the app calls `PeerVideoService.sendCommandPeerVideo(order_id, printer_id)`.
-The call makes the cloud wake the printer's camera over MQTT. The response
-holds `token` (AWS `region`, `sessionToken`, `tmpSecretId`, `tmpSecretKey`)
+Both use the same REST call. The slicer posts to `/work/operation/sendOrder`
+with `{order_id: 1001, printer_id, shengwang_rtc_support}`, and the app calls
+`PeerVideoService.sendCommandPeerVideo(order_id, printer_id)`. The cloud then
+wakes the printer's camera over MQTT and returns `token` (AWS credentials)
 and/or `shengwang` (`appid`, `channel`, `rtc_token`, `client_uid`,
-`encryption_mode/key/kdf_salt`). The app picks Shengwang when the printer
-supports it and falls back to AWS. The slicer's flow matches this.
-LAN video is separate and uses `webrtcstreamer.js`.
+`encryption_*`). LAN video is separate and uses FLV, not WebRTC.
 
-**The only blocker is one platform check** in the `cameraSupport` module:
+### The Linux gate
+
+One platform check disables it:
 
 ```js
 function isLinuxCloudCameraUnsupported(printerType, platformIsLinux) {
@@ -51,114 +53,96 @@ function isLinuxCloudCameraUnsupported(printerType, platformIsLinux) {
 ```
 
 It drives `linuxCloudCameraUnsupported` in `WorkbenchV3`, which disables the
-play button and shows the `video_lan_only` i18n string above. It is the only
-use of `isLinux()` in the camera path. The Chinese comment says it was aligned
-with the old workbench and `shengwangDoc`, so it was probably disabled on Linux
-for the old Agora SDK. WebKitGTK exposes `enable-webrtc`, and the LAN video
-already needs WebRTC in the same webview, so there is no obvious technical
-reason for the restriction.
+play button and shows the `video_lan_only` string. Changing `=== true` to
+`=== null` removes the gate. That part works (see experiments below).
 
-### The patch
+### The real blocker: no WebRTC in the system WebKitGTK
 
-`appimage/patch-cloud-video.py` is run by `appimage/build-latest.sh` only when
-`VARIANT=cloud-video` (the stable build is never patched), right after the
-Debian contents are copied in, with `--strict` so a vanished pattern fails the
-build instead of publishing an unpatched "patched" AppImage. It changes `platformIsLinux === true`
-to `=== null` in the embedded zip entry.
+With the gate removed, play works, `sendOrder` succeeds, and the Agora SDK
+starts joining, then fails with:
 
-The entry is deflate-compressed and the archive sits at a fixed size inside the
-ELF, so the script does not rewrite the file:
+```
+ReferenceError: Can't find variable: RTCPeerConnection
+```
 
-1. It recompresses the patched JS (zlib level 9). That is about 1.7 KB larger
-   than the original slot, so it strips the minimum number of pure-comment
-   webpack banners (`/*!****!*\ ... \****/`) found by binary search.
-2. It pads the deflate stream with empty deflate blocks to exactly the original
-   compressed size, so no offsets move.
-3. It updates the CRC32 and uncompressed size in the local and central headers.
-4. It self-checks by inflating the rebuilt stream.
+The webview has no WebRTC at all. The app does call
+`webkit_settings_set_enable_webrtc(TRUE)`, but WebKitGTK only provides WebRTC if
+it was built with the GStreamer WebRTC backend (`-DUSE_GSTREAMER_WEBRTC=ON`,
+needs `libnice` and `libsrtp`). Both cloud paths (Agora Web SDK and AWS KVS)
+need `RTCPeerConnection`, which is almost certainly why upstream disabled it on
+Linux.
 
-It is idempotent. If the pattern is missing (upstream changed or fixed it),
-behaviour depends on the mode:
+- Host Fedora 44 WebKitGTK 2.54: no `GStreamerMediaEndpoint` or `webrtcbin`
+  symbols, so no WebRTC.
+- The AppImage uses the host WebKitGTK, so it cannot fix this.
+- GNOME runtimes (checked in `gnome-build-meta`): 48 has WebKitGTK 2.50.6, and
+  49/50 have 2.54.1. All use default CMake options with no WebRTC flag and no
+  `libnice`/`libsrtp` dependency, so the Flatpak cannot either.
+- The only path left is building WebKitGTK ourselves with the WebRTC backend
+  (hours-long build, experimental backend, unverified support for what the
+  Agora SDK needs such as encrypted media). Not recommended.
 
-- Without `--strict` (manual use): it prints a `::warning::` and leaves the file
-  alone with exit 0.
-- With `--strict` (what `build-latest.sh` uses for `VARIANT=cloud-video`, so the
-  CI release path): it exits 1, the `cloud-video` job fails, and the existing
-  pre-release is left as it was. The stable release job is a separate job and is
-  not affected.
+## Experiments and dead ends
 
-If the new entry cannot fit in the original slot, it exits 1 in both modes.
+### Patching `libWorkbench.so` crashes the app
 
-Verified on the 2.0.0.5 `libWorkbench.so`:
+The patch itself is easy: recompress the deflated entry (zlib level 9 is about
+1.7 KB larger than the original slot, so strip pure-comment webpack banners and
+pad the deflate stream with empty blocks to the exact original compressed size;
+fix CRC32 and sizes). The resulting archive is valid (`zipfile.testzip()`, JS
+parses, only the one entry differs).
 
-- the file size is unchanged;
-- `zipfile.testzip()` passes on every entry;
-- only `WorkbenchV3_vue.js` differs;
-- its contents equal the original plus the one-token change minus 218 banner
-  comments;
-- `node --check` parses the result.
+**But the app segfaults at startup** (jump to a garbage heap address, before any
+app log). Flipping a single bit in an unrelated stored PNG with a corrected CRC
+crashes it too, so the app has an integrity check on `libWorkbench.so`. The main
+binary links an MD5 helper (`Anycubbic::Encrypt::sha_md5_file`). I did not trace
+or defeat the check, and shouldn't: it would mean disabling a vendor integrity
+protection. **Do not ship a modified `libWorkbench.so`.**
 
-**Not verified end to end.** It has not been tested against a real
-cloud-connected printer with a logged-in account. After changing the patch or
-bumping the slicer version, test in the AppImage: log in, select a cloud
-printer, press play, and check that the video shows instead of the LAN-only
-text.
+### `ACNEXT_WORKBENCH_ENV_VAR` works (unmodified binaries)
 
-### Release pipeline
+The main binary does `getenv("ACNEXT_WORKBENCH_ENV_VAR")` and uses the value as
+the Workbench page URL. Otherwise it uses `<scheme>://<host>/Workbench/index.html`.
+Verified: extract the archive to a folder and launch the unmodified app with
 
-`.github/workflows/appimage.yml` publishes two things per application version:
+```bash
+ACNEXT_WORKBENCH_ENV_VAR=file:///path/to/extracted/index.html ./AppRun
+```
 
-- the stable release `<version>` (unpatched, unchanged behaviour), and
-- a **rolling pre-release tagged `cloud-video`** with the patched AppImage:
-  `AnycubicSlicer-<version>-cloud-video-x86_64.AppImage`,
-  `AnycubicSlicer-cloud-video-x86_64.AppImage` and its `.zsync`. Old versioned
-  patched assets are deleted; the release title carries the current version and
-  the `cloud-video` tag is moved to the commit that built the assets.
+The local UI loads, login stays valid, printers list and the API calls work (the
+`anycubic://localhost/api/v1/account/headers` native scheme is accessible from a
+`file://` origin). This is the clean way to apply a web-layer patch without
+touching vendor binaries. It is only useful once WebRTC exists in the webview.
 
-The patched AppImage embeds `gh-releases-zsync|...|cloud-video|...` update
-information, because the `latest` tag skips pre-releases. The `check` job
-checks both releases separately, so the expensive builds are skipped when each
-is complete. Never publish the patched build as a normal release.
+### Debugging tips for the local-override setup
 
-### If it stops working
+- Report errors from the page: inject a hook into `index.html` that sends
+  `console.warn/error`, `window.onerror`, `unhandledrejection` and XHR statuses to
+  a local HTTP server via `new Image().src = 'http://127.0.0.1:PORT/...'`.
+  **Redact long token-like strings and never log API response bodies**: the
+  `sendOrder` response contains temporary AWS/Agora credentials.
+- `UID_CONFLICT` from Agora appears when `play`/retry is clicked repeatedly:
+  several overlapping joins use the same `client_uid`. Click once and wait.
+- Do not use `pkill -f` or `pgrep -f` with patterns that appear in your own
+  command line; match the process name instead (`pgrep -x AnycubicSlicerN`).
+- The app's data dir and logs are under `~/.config/AnycubicSlicerNext/` and
+  `~/.AnycubicSlicerNext/`.
 
-- **"pattern not found" (a warning locally, a failed `cloud-video` job in CI).**
-  Upstream changed the function. Re-extract the archive (steps below) and look at
-  `isLinuxCloudCameraUnsupported` / `linuxCloudCameraUnsupported` again.
-  Upstream may have enabled Linux, which means the patch can be removed.
-- **Play button works but no video.** Check the WebKit console. Likely causes
-  are missing H.264 or GStreamer codecs on the host
-  (`gstreamer1.0-plugins-bad`, `gstreamer1.0-libav`), WebKitGTK built without
-  WebRTC, or the Agora Web SDK's browser-support check. The Android app is the
-  reference for the expected signaling flow.
-- **Reading the web code.** Extract the archive: find the last `PK\x05\x06`
-  record in `libWorkbench.so`, compute `zip_start = eocd - cd_size - cd_offset`,
-  and open `data[zip_start:]` with `zipfile`.
+## If you revisit this
 
-### Other leads and non-goals
-
-- `ACNEXT_WORKBENCH_ENV_VAR`: the main binary does `getenv()` on this to get the
-  Workbench URL. If unset, it builds `<scheme>://<host>/Workbench/index.html`.
-  It looks like a full-URL override, which could load an unpacked patched
-  Workbench without touching the library. This is untested. On Linux the page
-  calls `fetch('anycubic://localhost/api/v1/account/headers')`, a native custom
-  scheme, so a different origin may be blocked by CORS.
-- The Flatpak (`flatpak/com.anycubic.AnycubicSlicer.yml`) is not patched. The
-  same script can be applied to `/app/lib/libWorkbench.so` if wanted.
-- Do not try to reimplement the video protocols natively. The slicer's own web
-  code already does this.
-- Treat the temporary AWS/Agora credentials returned by the cloud API as
-  secrets. Do not log them or commit captured responses.
+1. Check whether the target WebKitGTK now has WebRTC: in the running page,
+   `typeof RTCPeerConnection` must not be `"undefined"`. Newer runtimes or a
+   distro build with `USE_GSTREAMER_WEBRTC` would change the picture.
+2. If it does, test with the env-var override first (extract, change `=== true`
+   to `=== null` in `isLinuxCloudCameraUnsupported`, launch with
+   `ACNEXT_WORKBENCH_ENV_VAR`). If cloud video plays, package it by shipping the
+   patched web folder in the AppImage and exporting the variable in `AppRun`.
+   Do not modify `libWorkbench.so`.
+3. Check the Android app (`PeerVideoService`, `AgoraConnectionClient`,
+   `PeerConnectionClient`) as the reference for the expected signalling flow.
+4. Treat temporary credentials from the cloud API as secrets. Do not log or commit
+   them.
 
 ## Validation
 
-Run the checks from `AGENTS.md`, plus:
-
-```bash
-python3 -I -m py_compile appimage/patch-cloud-video.py
-```
-
-To test the patch without building, copy a `libWorkbench.so` out of an
-extracted AppImage or `.deb`, run the script on the copy twice (the second run
-must print "already applied"), then confirm with `zipfile.testzip()` and
-`node --check` on the extracted `WorkbenchV3_vue.js`.
+Run the checks from `AGENTS.md` for any change to scripts or the workflow.

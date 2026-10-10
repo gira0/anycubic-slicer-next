@@ -4,14 +4,7 @@ set -euo pipefail
 apt_base_url="${APT_BASE_URL:-https://cdn-universe-slicer.anycubic.com/prod}"
 packages_url="$apt_base_url/dists/noble/main/binary-amd64/Packages"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# VARIANT=cloud-video builds the patched pre-release flavour (see CLAUDE.md).
-variant="${VARIANT:-stable}"
-case "$variant" in
-    stable) work_name="anycubic-slicer-build"; name_infix=""; update_tag="latest" ;;
-    cloud-video) work_name="anycubic-slicer-build-cloud-video"; name_infix="-cloud-video"; update_tag="cloud-video" ;;
-    *) echo "Unknown VARIANT: $variant" >&2; exit 1 ;;
-esac
-work_dir="${RUNNER_TEMP:-/tmp}/$work_name"
+work_dir="${RUNNER_TEMP:-/tmp}/anycubic-slicer-build"
 deb_path="$work_dir/anycubicslicernext.deb"
 app_dir="$work_dir/AnycubicSlicer.AppDir"
 appimage_tool="$work_dir/appimagetool"
@@ -42,12 +35,6 @@ ar x "$deb_path"
 tar -xf data.tar.*
 cp -a usr/. "$app_dir/"
 
-if [[ "$variant" == "cloud-video" ]]; then
-    # Enable cloud-connected video monitoring, which upstream disables on Linux.
-    # --strict fails the build rather than publishing an unpatched "patched" build.
-    python3 "$script_dir/patch-cloud-video.py" --strict "$app_dir/lib/libWorkbench.so"
-fi
-
 cp "$script_dir/AppRun" "$app_dir/AppRun"
 chmod +x "$app_dir/AppRun"
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
@@ -67,7 +54,7 @@ if [[ -f "$icon_file" ]]; then
     cp "$icon_file" "$app_dir/AnycubicSlicer.png"
 fi
 
-update_information='X-AppImage-UpdateInformation=gh-releases-zsync|gira0|anycubic-slicer-next|'"$update_tag"'|AnycubicSlicer'"$name_infix"'-x86_64.AppImage.zsync'
+update_information='X-AppImage-UpdateInformation=gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
 if grep -q '^X-AppImage-UpdateInformation=' "$desktop_file"; then
     sed -i "s|^X-AppImage-UpdateInformation=.*|$update_information|" "$desktop_file"
 else
@@ -80,8 +67,8 @@ if [[ ! -x "$appimage_tool" ]]; then
     chmod +x "$appimage_tool"
 fi
 
-versioned_appimage="$work_dir/AnycubicSlicer-${app_version}${name_infix}-x86_64.AppImage"
-latest_appimage="$work_dir/AnycubicSlicer${name_infix}-x86_64.AppImage"
+versioned_appimage="$work_dir/AnycubicSlicer-${app_version}-x86_64.AppImage"
+latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" "$app_dir" "$versioned_appimage"
 cp "$versioned_appimage" "$latest_appimage"
 zsyncmake "$latest_appimage" -o "$latest_appimage.zsync"

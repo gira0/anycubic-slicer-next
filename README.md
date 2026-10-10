@@ -23,14 +23,6 @@ The AppImage includes AppImageUpdate metadata. The updater uses the stable
 The AppImage requires glibc 2.38+ and GLib 2.76+. Use the Flatpak on older Linux
 distributions.
 
-### Cloud video (pre-release)
-
-Upstream disables video monitoring for cloud-connected printers on Linux. The
-`cloud-video` pre-release contains an unofficial patched AppImage
-(`AnycubicSlicer-cloud-video-x86_64.AppImage`) that re-enables it. It updates
-itself from that pre-release. The stable release is not patched. See
-`CLAUDE.md` for details.
-
 ## Automated Updates
 
 The GitHub Actions workflow in `.github/workflows/appimage.yml` runs daily at
