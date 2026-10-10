@@ -153,6 +153,11 @@ jobs:
               "$VERSIONED_APPIMAGE" \
               "$LATEST_APPIMAGE" \
               "$ZSYNC"
+            # Assets are uploaded first, so a failure above leaves the old tag
+            # and assets consistent. Then move the tag so the release's source
+            # matches the binaries it now carries.
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/cloud-video" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
             gh release edit cloud-video \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \

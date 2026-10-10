@@ -77,9 +77,17 @@ ELF, so the script does not rewrite the file:
 3. It updates the CRC32 and uncompressed size in the local and central headers.
 4. It self-checks by inflating the rebuilt stream.
 
-It is idempotent. If the pattern is missing (upstream changed or fixed it), it
-prints a `::warning::` and leaves the file alone with exit 0, so the daily
-build keeps working. If the new entry cannot fit, it exits 1.
+It is idempotent. If the pattern is missing (upstream changed or fixed it),
+behaviour depends on the mode:
+
+- Without `--strict` (manual use): it prints a `::warning::` and leaves the file
+  alone with exit 0.
+- With `--strict` (what `build-latest.sh` uses for `VARIANT=cloud-video`, so the
+  CI release path): it exits 1, the `cloud-video` job fails, and the existing
+  pre-release is left as it was. The stable release job is a separate job and is
+  not affected.
+
+If the new entry cannot fit in the original slot, it exits 1 in both modes.
 
 Verified on the 2.0.0.5 `libWorkbench.so`:
 
@@ -104,7 +112,8 @@ text.
 - a **rolling pre-release tagged `cloud-video`** with the patched AppImage:
   `AnycubicSlicer-<version>-cloud-video-x86_64.AppImage`,
   `AnycubicSlicer-cloud-video-x86_64.AppImage` and its `.zsync`. Old versioned
-  patched assets are deleted; the release title carries the current version.
+  patched assets are deleted; the release title carries the current version and
+  the `cloud-video` tag is moved to the commit that built the assets.
 
 The patched AppImage embeds `gh-releases-zsync|...|cloud-video|...` update
 information, because the `latest` tag skips pre-releases. The `check` job
@@ -113,8 +122,8 @@ is complete. Never publish the patched build as a normal release.
 
 ### If it stops working
 
-- **Warning "pattern not found" in the build log.** Upstream changed the
-  function. Re-extract the archive (steps below) and look at
+- **"pattern not found" (a warning locally, a failed `cloud-video` job in CI).**
+  Upstream changed the function. Re-extract the archive (steps below) and look at
   `isLinuxCloudCameraUnsupported` / `linuxCloudCameraUnsupported` again.
   Upstream may have enabled Linux, which means the patch can be removed.
 - **Play button works but no video.** Check the WebKit console. Likely causes
