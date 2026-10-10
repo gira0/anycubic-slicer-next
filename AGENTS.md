@@ -37,3 +37,12 @@ extract-and-run setup.
 Do not commit generated AppImages, extracted Debian contents, or temporary build
 directories. Do not create a release for an application version that already has
 all required assets.
+
+## Documentation
+
+- `docs/cloud-video-investigation.md`: why cloud-connected video monitoring does
+  not work on Linux (no WebRTC in the system WebKitGTK), what was tried
+  (patching `libWorkbench.so` crashes the app via an integrity check;
+  `ACNEXT_WORKBENCH_ENV_VAR` works as a Workbench URL override), and how to
+  revisit it. Read it before attempting any video-related change, and do not
+  modify `libWorkbench.so`. Keep `*.apk` files out of git.
