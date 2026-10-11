@@ -10,7 +10,7 @@ modifying any vendor binary:
    session returned by `sendOrder` to a local helper.
 2. It starts the slicer with `ACNEXT_WORKBENCH_ENV_VAR` pointing at the patched copy
    (the slicer provides login and signed API requests).
-3. The helper opens a small viewer in a Chromium-family browser, which joins the
+3. The helper opens a small viewer in a browser (Chromium family preferred, or Firefox), which joins the
    Agora channel with the Agora Web SDK (same version and settings as the slicer).
 
 ## Usage
