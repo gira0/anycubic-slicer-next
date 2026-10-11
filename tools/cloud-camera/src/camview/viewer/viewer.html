@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anycubic camera</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; margin: 0; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0 0 36px 0; background: #000; }
+  #video { width: 100%; height: 100%; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; height: 36px; display: flex; gap: 8px;
+         align-items: center; padding: 0 10px; background: #1b1b1b; box-sizing: border-box; }
+  #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+  button:hover { background: #444; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="video"></div></div>
+<div id="bar">
+  <span id="status" role="status" aria-live="polite">Waiting for a session from the slicer…</span>
+  <button id="unmute" hidden>Unmute</button>
+  <button id="fs">Fullscreen</button>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('t');
+const $ = (id) => document.getElementById(id);
+const setStatus = (t) => { $('status').textContent = t; document.title = 'Anycubic camera - ' + t; };
+let seq = 0, client = null, audioTrack = null, publishTimer = null;
+
+function b64ToBytes(b64) {
+  const raw = atob(b64), out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function leave() {
+  clearTimeout(publishTimer);
+  if (client) { try { await client.leave(); } catch (e) {} client = null; }
+  audioTrack = null; $('unmute').hidden = true; $('video').replaceChildren();
+}
+
+async function join(session) {
+  await leave();
+  const sw = session.shengwang, name = (session.printer && session.printer.name) || 'printer';
+  setStatus('Connecting to ' + name + '…');
+  // Same configuration as the slicer's AgoraConnectionManager.
+  client = AgoraRTC.createClient({ mode: 'live', codec: 'h264', role: 'host' });
+  const c = client;
+  c.on('connection-state-change', (cur, prev, reason) => console.log('state', prev, '->', cur, reason));
+  c.on('user-published', async (user, mediaType) => {
+    try { await c.subscribe(user, mediaType); } catch (e) { setStatus('Subscribe failed: ' + e.message); return; }
+    if (mediaType === 'video') {
+      clearTimeout(publishTimer);  // only video counts; audio alone must not hide the warning
+      user.videoTrack.play('video'); setStatus('Live: ' + name);
+    }
+    if (mediaType === 'audio') { audioTrack = user.audioTrack; $('unmute').hidden = false; }
+  });
+  c.on('user-unpublished', (user, mediaType) => { if (mediaType === 'video') setStatus('Camera stopped'); });
+  c.on('user-left', () => setStatus('Printer left the channel'));
+  c.on('exception', (e) => console.warn('exception', e.code, e.msg));
+  const mode = String(sw.encryption_mode || '').toLowerCase().split('_').join('-');
+  if (mode && sw.encryption_key && sw.encryption_kdf_salt) {
+    await c.setEncryptionConfig(mode, String(sw.encryption_key), b64ToBytes(sw.encryption_kdf_salt));
+  }
+  await c.join(sw.appid, sw.channel, sw.rtc_token || null, sw.client_uid || null);
+  setStatus('Joined, waiting for the printer camera…');
+  publishTimer = setTimeout(() => setStatus('Joined, but the printer is not publishing video (is the camera on?)'), 20000);
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/session?t=' + encodeURIComponent(token) + '&since=' + seq, { cache: 'no-store' });
+    const j = await r.json();
+    if (j.seq !== seq) {
+      seq = j.seq;
+      if (j.session) await join(j.session).catch((e) => setStatus('Error: ' + (e.code || '') + ' ' + (e.message || e)));
+    }
+  } catch (e) { setStatus('Lost connection to the helper'); }
+  setTimeout(poll, 1500);
+}
+
+$('unmute').onclick = () => { if (audioTrack) { audioTrack.play(); $('unmute').hidden = true; } };
+$('fs').onclick = () => document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+window.addEventListener('beforeunload', () => { if (client) client.leave(); });
+const s = document.createElement('script');
+s.src = '/agora.js?t=' + encodeURIComponent(token);
+s.onload = poll;
+s.onerror = () => setStatus('Could not load the Agora SDK from the helper');
+document.head.appendChild(s);
+</script>
+</body>
+</html>

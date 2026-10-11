@@ -46,3 +46,6 @@ all required assets.
   `ACNEXT_WORKBENCH_ENV_VAR` works as a Workbench URL override), and how to
   revisit it. Read it before attempting any video-related change, and do not
   modify `libWorkbench.so`. Keep `*.apk` files out of git.
+- `tools/cloud-camera/`: `camview`, a `uv` prototype that shows cloud printer
+  cameras on Linux through a patched Workbench copy and a Chromium viewer window
+  (see its README). Run it with `uv run camview run --appimage PATH`.

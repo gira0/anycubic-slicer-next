@@ -82,6 +82,18 @@ Linux.
   (hours-long build, experimental backend, unverified support for what the
   Agora SDK needs such as encrypted media). Not recommended.
 
+## Working workaround: `tools/cloud-camera` (camview)
+
+Verified on slicer 2.0.0.5 with a real cloud printer (Agora/Shengwang session):
+cloud video plays in a separate Chromium window. It uses the
+`ACNEXT_WORKBENCH_ENV_VAR` override (see below) with a patched copy of the web
+UI that removes the Linux gate and hands the `sendOrder` Shengwang session to a
+local helper, which opens a viewer page that joins the channel with the Agora Web
+SDK (the version the slicer bundles, 4.24.4) in a WebRTC-capable browser. No
+vendor binary is modified. See `tools/cloud-camera/README.md`. Limits: Agora
+sessions only (not AWS-only printers), and the slicer UI keeps showing
+"connecting" after the hand-off.
+
 ## Experiments and dead ends
 
 ### Patching `libWorkbench.so` crashes the app
