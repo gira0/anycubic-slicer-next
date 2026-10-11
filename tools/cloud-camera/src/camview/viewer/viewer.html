@@ -19,7 +19,7 @@
 <body>
 <div id="stage"><div id="video"></div></div>
 <div id="bar">
-  <span id="status">Waiting for a session from the slicer…</span>
+  <span id="status" role="status" aria-live="polite">Waiting for a session from the slicer…</span>
   <button id="unmute" hidden>Unmute</button>
   <button id="fs">Fullscreen</button>
 </div>
@@ -51,8 +51,10 @@ async function join(session) {
   c.on('connection-state-change', (cur, prev, reason) => console.log('state', prev, '->', cur, reason));
   c.on('user-published', async (user, mediaType) => {
     try { await c.subscribe(user, mediaType); } catch (e) { setStatus('Subscribe failed: ' + e.message); return; }
-    clearTimeout(publishTimer);
-    if (mediaType === 'video') { user.videoTrack.play('video'); setStatus('Live: ' + name); }
+    if (mediaType === 'video') {
+      clearTimeout(publishTimer);  // only video counts; audio alone must not hide the warning
+      user.videoTrack.play('video'); setStatus('Live: ' + name);
+    }
     if (mediaType === 'audio') { audioTrack = user.audioTrack; $('unmute').hidden = false; }
   });
   c.on('user-unpublished', (user, mediaType) => { if (mediaType === 'video') setStatus('Camera stopped'); });

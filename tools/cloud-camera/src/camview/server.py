@@ -45,23 +45,34 @@ class State:
         self.lock = threading.Lock()
         self.seq = 0
         self.session: dict | None = None
-        self.session_time = 0.0
         self.last_poll = 0.0
         self.port = 0
+        self._expiry: threading.Timer | None = None
+
+    def _expire(self, seq: int) -> None:
+        with self.lock:
+            if self.seq == seq:  # not replaced by a newer session meanwhile
+                self.session = None
 
     def set_session(self, session: dict) -> bool:
-        """Store a session; return True if a viewer window must be opened."""
+        """Store a session; return True if a viewer window must be opened.
+
+        The session (temporary credentials) is dropped SESSION_TTL seconds later
+        whether or not a viewer ever polls for it.
+        """
         with self.lock:
             self.seq += 1
             self.session = session
-            self.session_time = time.monotonic()
+            if self._expiry:
+                self._expiry.cancel()
+            self._expiry = threading.Timer(SESSION_TTL, self._expire, args=(self.seq,))
+            self._expiry.daemon = True
+            self._expiry.start()
             return time.monotonic() - self.last_poll > VIEWER_ALIVE
 
     def poll(self, since: int) -> dict:
         with self.lock:
             self.last_poll = time.monotonic()
-            if self.session and time.monotonic() - self.session_time > SESSION_TTL:
-                self.session = None
             return {"seq": self.seq, "session": self.session if self.seq != since else None}
 
 
