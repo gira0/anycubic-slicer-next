@@ -42,7 +42,11 @@ def prepared_webui(lib: Path) -> Path:
         patch.patch_webui(tmp)
         try:
             os.rename(tmp, target)
-        except OSError:  # another instance won the race
+        except OSError:
+            # Fine only if another instance won the race with a complete copy;
+            # any other failure must not publish a URL to a missing index.html.
+            if not (target / "index.html").is_file():
+                raise
             shutil.rmtree(tmp, ignore_errors=True)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)

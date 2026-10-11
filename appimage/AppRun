@@ -9,22 +9,28 @@ DIR=$(readlink -f "$0" | xargs dirname)
 # silently falls back to the stock slicer. Disable with ANYCUBIC_CLOUD_CAMERA=0.
 if [ "${ANYCUBIC_CLOUD_CAMERA:-1}" != "0" ] && [ -d "$DIR/share/camview/camview" ] \
         && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
-    CAMVIEW_READY=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/camview-ready.XXXXXX")
-    PYTHONPATH="$DIR/share/camview" python3 -s -m camview sidecar \
-        --lib "$DIR/lib/libWorkbench.so" --parent-pid $$ --ready-file "$CAMVIEW_READY" \
-        >/dev/null 2>&1 </dev/null &
-    CAMVIEW_PID=$!
-    for _ in $(seq 1 150); do
-        [ -s "$CAMVIEW_READY" ] && break
-        kill -0 "$CAMVIEW_PID" 2>/dev/null || break
-        sleep 0.1
-    done
-    if [ -s "$CAMVIEW_READY" ]; then
-        ACNEXT_WORKBENCH_ENV_VAR=$(cat "$CAMVIEW_READY")
-        export ACNEXT_WORKBENCH_ENV_VAR
+    # Private (mode 0700) handshake directory: mktemp -u would only invent a name that
+    # another local process could claim in a shared /tmp.
+    if CAMVIEW_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/camview.XXXXXX" 2>/dev/null); then
+        CAMVIEW_READY="$CAMVIEW_DIR/ready"
+        PYTHONPATH="$DIR/share/camview" python3 -s -m camview sidecar \
+            --lib "$DIR/lib/libWorkbench.so" --parent-pid $$ --ready-file "$CAMVIEW_READY" \
+            >/dev/null 2>&1 </dev/null &
+        CAMVIEW_PID=$!
+        for _ in $(seq 1 150); do
+            [ -s "$CAMVIEW_READY" ] && break
+            kill -0 "$CAMVIEW_PID" 2>/dev/null || break
+            sleep 0.1
+        done
+        if [ -s "$CAMVIEW_READY" ]; then
+            ACNEXT_WORKBENCH_ENV_VAR=$(cat "$CAMVIEW_READY")
+            export ACNEXT_WORKBENCH_ENV_VAR
+        fi
+        # The sidecar keeps running (it exits with the slicer); it no longer needs the
+        # handshake files, and AppRun is about to exec the slicer.
+        rm -rf "$CAMVIEW_DIR"
     fi
-    rm -f "$CAMVIEW_READY"
-    unset CAMVIEW_READY CAMVIEW_PID
+    unset CAMVIEW_DIR CAMVIEW_READY CAMVIEW_PID
 fi
 
 export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin:$LD_LIBRARY_PATH"
