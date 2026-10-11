@@ -170,15 +170,20 @@ def make_handler(state: State):
                 if not 0 < length <= MAX_BODY:
                     raise ValueError
                 body = json.loads(self.rfile.read(length))
-                sw = body["shengwang"]
-                if not all(sw.get(k) for k in REQUIRED):
+                if not isinstance(body, dict):
                     raise ValueError
-            except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                sw = body.get("shengwang")
+                if not isinstance(sw, dict) or not all(sw.get(k) for k in REQUIRED):
+                    raise ValueError
+                printer = body.get("printer")
+                if not isinstance(printer, dict):
+                    printer = {}
+            except (ValueError, json.JSONDecodeError):
                 return self._send(400)
-            session = {"printer": body.get("printer") or {}, "shengwang": sw}
+            session = {"printer": printer, "shengwang": sw}
             if state.set_session(session):
                 launch_viewer(state)
-            print(f"camview: session received for printer {session['printer'].get('id')}")
+            print(f"camview: session received for printer {printer.get('id')}")
             self._send(204)
 
     return Handler
