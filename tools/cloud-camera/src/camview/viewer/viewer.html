@@ -69,15 +69,26 @@ async function join(session) {
   publishTimer = setTimeout(() => setStatus('Joined, but the printer is not publishing video (is the camera on?)'), 20000);
 }
 
+let failures = 0;
 async function poll() {
   try {
     const r = await fetch('/session?t=' + encodeURIComponent(token) + '&since=' + seq, { cache: 'no-store' });
     const j = await r.json();
+    failures = 0;
     if (j.seq !== seq) {
       seq = j.seq;
       if (j.session) await join(j.session).catch((e) => setStatus('Error: ' + (e.code || '') + ' ' + (e.message || e)));
     }
-  } catch (e) { setStatus('Lost connection to the helper'); }
+  } catch (e) {
+    // The helper exits together with the slicer: leave the channel and stop polling
+    // instead of retrying forever.
+    if (++failures >= 3) {
+      await leave();
+      setStatus('The slicer was closed. You can close this window.');
+      window.close();  // only works if the browser allows it; harmless otherwise
+      return;
+    }
+  }
   setTimeout(poll, 1500);
 }
 

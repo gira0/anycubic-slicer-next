@@ -21,7 +21,9 @@ from pathlib import Path
 
 from . import patch, sdk, server
 
-KEEP_CACHED_UIS = 2
+KEEP_CACHED_UIS = 2        # newest cached UIs that are never pruned
+HEARTBEAT = 30             # seconds between "still in use" touches of the UI directory
+ACTIVE_WINDOW = 180        # a UI touched this recently belongs to a running sidecar
 
 
 def _log(msg: str) -> None:
@@ -34,6 +36,7 @@ def prepared_webui(lib: Path) -> Path:
     webui_dir = sdk.cache_dir() / "webui"
     target = webui_dir / f"{digest}-v{patch.PATCH_VERSION}"
     if (target / "index.html").is_file():
+        _touch(target)
         return target
     webui_dir.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".new-", dir=webui_dir))
@@ -51,22 +54,41 @@ def prepared_webui(lib: Path) -> Path:
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    # Prune older UIs (other slicer versions).
-    old = sorted((d for d in webui_dir.iterdir() if d.is_dir() and not d.name.startswith(".")),
-                 key=lambda d: d.stat().st_mtime, reverse=True)
-    for d in old[KEEP_CACHED_UIS:]:
-        shutil.rmtree(d, ignore_errors=True)
+    _touch(target)
+    prune(webui_dir)
     return target
 
 
-def _alive(pid: int) -> bool:
+def _touch(path: Path) -> None:
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        os.utime(path)
+    except OSError:
+        pass
+
+
+def prune(webui_dir: Path, now: float | None = None) -> None:
+    """Remove cached UIs of old slicer versions.
+
+    Keeps the newest KEEP_CACHED_UIS and any directory touched within ACTIVE_WINDOW:
+    running sidecars refresh their directory every HEARTBEAT seconds, and the slicer
+    keeps loading assets from it, so an in-use UI must never be deleted.
+    """
+    now = time.time() if now is None else now
+    dirs = sorted((d for d in webui_dir.iterdir() if d.is_dir() and not d.name.startswith(".")),
+                  key=lambda d: d.stat().st_mtime, reverse=True)
+    for d in dirs[KEEP_CACHED_UIS:]:
+        if now - d.stat().st_mtime > ACTIVE_WINDOW:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def _parent_alive(parent_pid: int) -> bool:
+    """True while we are still a child of the process that started us.
+
+    AppRun starts the sidecar as a background child and later exec()s the slicer, so
+    the parent keeps the same PID. Comparing getppid() is robust against PID reuse
+    (when the parent dies we are re-parented and getppid() changes).
+    """
+    return os.getppid() == parent_pid
 
 
 def run_sidecar(lib: Path, parent_pid: int, ready_file: Path) -> int:
@@ -86,14 +108,19 @@ def run_sidecar(lib: Path, parent_pid: int, ready_file: Path) -> int:
 
     url = f"{(webui / 'index.html').as_uri()}?cv={state.port}.{token}"
     tmp = ready_file.with_name(ready_file.name + ".tmp")
-    tmp.write_text(url + "\n")
-    os.chmod(tmp, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(url + "\n")
     os.replace(tmp, ready_file)
 
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    while not stop.is_set() and _alive(parent_pid):
+    last_beat = time.monotonic()
+    while not stop.is_set() and _parent_alive(parent_pid):
         time.sleep(1)
+        if time.monotonic() - last_beat >= HEARTBEAT:
+            _touch(webui)  # tell other sidecars' pruning that this UI is in use
+            last_beat = time.monotonic()
     httpd.shutdown()
     return 0
 

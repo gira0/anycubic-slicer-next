@@ -42,12 +42,13 @@ chmod +x "$app_dir/AppRun"
 # user's machine at launch; here we only check that it still applies to this version.
 mkdir -p "$app_dir/share/camview"
 cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/share/camview/"
-find "$app_dir/share/camview" -name __pycache__ -prune -exec rm -rf {} +
-if ! PYTHONPATH="$app_dir/share/camview" python3 -s -m camview prepare \
+# Do not let the check below write bytecode into the bundle that gets packaged.
+if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/share/camview" python3 -s -m camview prepare \
         --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check"; then
     echo "::warning::cloud camera patch no longer applies to $app_version; the AppImage falls back to stock behaviour"
 fi
 rm -rf "$work_dir/camview-check"
+find "$app_dir/share/camview" -name __pycache__ -prune -exec rm -rf {} +
 
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
 
