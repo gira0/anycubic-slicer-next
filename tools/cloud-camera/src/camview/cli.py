@@ -1,4 +1,6 @@
 """camview command line: run the slicer with a patched Workbench and a camera viewer."""
+from __future__ import annotations
+
 import argparse
 import os
 import secrets
@@ -8,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import patch, sdk, server
+from . import patch, sdk, server, sidecar
 
 
 def _find_lib(args, workdir: Path) -> Path:
@@ -27,12 +29,12 @@ def _find_lib(args, workdir: Path) -> Path:
     return lib
 
 
-def _prepare(args, workdir: Path, helper_url: str, token: str) -> Path:
+def _prepare(args, workdir: Path) -> Path:
     lib = _find_lib(args, workdir)
     root = workdir / "webui"
     root.mkdir()
     patch.extract_webui(lib, root)
-    patch.patch_webui(root, helper_url, token)
+    patch.patch_webui(root)
     return root
 
 
@@ -40,7 +42,7 @@ def cmd_prepare(args) -> int:
     """Extract and patch the web UI into a directory (for inspection)."""
     out = Path(args.out)
     with tempfile.TemporaryDirectory(prefix="camview-") as tmp:
-        root = _prepare(args, Path(tmp), "http://127.0.0.1:0", "TOKEN")
+        root = _prepare(args, Path(tmp))
         shutil.copytree(root, out, dirs_exist_ok=True)
     print(f"Patched web UI written to {out}")
     return 0
@@ -52,14 +54,13 @@ def cmd_run(args) -> int:
         sys.exit("camview: pass --appimage PATH or set CAMVIEW_APPIMAGE")
     sdk_path = sdk.ensure_sdk()
     token = secrets.token_urlsafe(24)
-    httpd, state = server.start_server(token, sdk_path)
-    helper_url = f"http://127.0.0.1:{state.port}"
+    httpd, state = server.start_server(token, lambda: sdk_path)
     with tempfile.TemporaryDirectory(prefix="camview-") as tmp:
         try:
-            root = _prepare(args, Path(tmp), helper_url, token)
+            root = _prepare(args, Path(tmp))
         except patch.PatchError as e:
             sys.exit(f"camview: {e}")
-        env = dict(os.environ, ACNEXT_WORKBENCH_ENV_VAR=(root / "index.html").as_uri())
+        env = dict(os.environ, ACNEXT_WORKBENCH_ENV_VAR=f"{(root / 'index.html').as_uri()}?cv={state.port}.{token}")
         if server.find_browser_command() is None:
             print("camview: warning: no Chromium-family browser found; set CAMVIEW_BROWSER")
         print("camview: starting the slicer with the patched Workbench")
@@ -67,6 +68,11 @@ def cmd_run(args) -> int:
             return subprocess.call([str(appimage.resolve()), *args.slicer_args], env=env)
         finally:
             httpd.shutdown()
+
+
+def cmd_sidecar(args) -> int:
+    """Used by the AppImage's AppRun; see sidecar.py."""
+    return sidecar.run_sidecar(Path(args.lib), args.parent_pid, Path(args.ready_file))
 
 
 def main() -> None:
@@ -83,5 +89,10 @@ def main() -> None:
             sp.set_defaults(lib=None)
             sp.add_argument("slicer_args", nargs="*", help="arguments passed to the slicer")
         sp.set_defaults(fn=fn)
+    sc = sub.add_parser("sidecar", help="AppImage mode: prepare the UI, serve the helper, write the URL")
+    sc.add_argument("--lib", required=True, help="path to libWorkbench.so")
+    sc.add_argument("--parent-pid", type=int, required=True, help="exit when this process exits")
+    sc.add_argument("--ready-file", required=True, help="file the Workbench URL is written to")
+    sc.set_defaults(fn=cmd_sidecar)
     args = p.parse_args()
     sys.exit(args.fn(args))

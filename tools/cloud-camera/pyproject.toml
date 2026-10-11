@@ -3,7 +3,7 @@ name = "camview"
 version = "0.1.0"
 description = "Prototype: view Anycubic cloud printer cameras on Linux in a WebRTC-capable browser"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]

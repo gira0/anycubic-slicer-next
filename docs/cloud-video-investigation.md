@@ -90,7 +90,9 @@ cloud video plays in a separate Chromium window. It uses the
 UI that removes the Linux gate and hands the `sendOrder` Shengwang session to a
 local helper, which opens a viewer page that joins the channel with the Agora Web
 SDK (the version the slicer bundles, 4.24.4) in a WebRTC-capable browser. No
-vendor binary is modified. See `tools/cloud-camera/README.md`. Limits: Agora
+vendor binary is modified. It is integrated into the AppImage (`AppRun` starts it as
+a sidecar and falls back to the stock slicer if anything is missing). See
+`tools/cloud-camera/README.md`. Limits: Agora
 sessions only (not AWS-only printers), and the slicer UI keeps showing
 "connecting" after the hand-off.
 

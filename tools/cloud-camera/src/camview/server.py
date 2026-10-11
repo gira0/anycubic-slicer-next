@@ -5,6 +5,8 @@ Security: bound to 127.0.0.1, every request needs the per-run random token,
 the Host header is checked (DNS rebinding), and sessions expire after SESSION_TTL
 seconds. Session contents (temporary credentials) are never logged.
 """
+from __future__ import annotations
+
 import hmac
 import json
 import shutil
@@ -12,7 +14,6 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -39,9 +40,9 @@ def find_browser_command() -> list[str] | None:
 
 
 class State:
-    def __init__(self, token: str, sdk_path: Path):
+    def __init__(self, token: str, get_sdk):
         self.token = token
-        self.sdk_path = sdk_path
+        self.get_sdk = get_sdk  # callable returning the verified SDK path
         self.lock = threading.Lock()
         self.seq = 0
         self.session: dict | None = None
@@ -118,10 +119,14 @@ def make_handler(state: State):
             if not self._token_ok(q.get("t", [None])[0]):
                 return self._send(403)
             if url.path == "/viewer":
-                html = resources.files("camview").joinpath("viewer/viewer.html").read_bytes()
+                html = (Path(__file__).parent / "viewer" / "viewer.html").read_bytes()
                 return self._send(200, html, "text/html; charset=utf-8")
             if url.path == "/agora.js":
-                return self._send(200, state.sdk_path.read_bytes(), "text/javascript; charset=utf-8")
+                try:
+                    sdk_bytes = state.get_sdk().read_bytes()
+                except Exception:
+                    return self._send(502)
+                return self._send(200, sdk_bytes, "text/javascript; charset=utf-8")
             if url.path == "/session":
                 try:
                     since = int(q.get("since", ["0"])[0])
@@ -156,8 +161,8 @@ def make_handler(state: State):
     return Handler
 
 
-def start_server(token: str, sdk_path: Path) -> tuple[ThreadingHTTPServer, State]:
-    state = State(token, sdk_path)
+def start_server(token: str, get_sdk) -> tuple[ThreadingHTTPServer, State]:
+    state = State(token, get_sdk)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     state.port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

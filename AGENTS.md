@@ -25,6 +25,7 @@ Run these checks after changing shell scripts or the workflow:
 ```bash
 bash -n appimage/check-latest.sh
 bash -n appimage/build-latest.sh
+bash -n appimage/AppRun
 git diff --check
 ```
 
@@ -49,3 +50,6 @@ all required assets.
 - `tools/cloud-camera/`: `camview`, a `uv` prototype that shows cloud printer
   cameras on Linux through a patched Workbench copy and a Chromium viewer window
   (see its README). Run it with `uv run camview run --appimage PATH`.
+  The AppImage bundles it (`share/camview`) and `AppRun` starts it as a sidecar. Keep it
+  stdlib-only and Python 3.9 compatible, bump `PATCH_VERSION` in `patch.py` when the
+  web UI patch changes, and never ship patched copies of Anycubic's web assets.

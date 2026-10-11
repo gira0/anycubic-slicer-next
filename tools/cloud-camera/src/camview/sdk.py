@@ -1,4 +1,6 @@
 """Fetch and cache the Agora Web SDK (the version the slicer bundles)."""
+from __future__ import annotations
+
 import hashlib
 import os
 import urllib.request

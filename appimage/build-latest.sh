@@ -37,6 +37,18 @@ cp -a usr/. "$app_dir/"
 
 cp "$script_dir/AppRun" "$app_dir/AppRun"
 chmod +x "$app_dir/AppRun"
+
+# Cloud camera helper (tools/cloud-camera). The web UI patch itself is applied on the
+# user's machine at launch; here we only check that it still applies to this version.
+mkdir -p "$app_dir/share/camview"
+cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/share/camview/"
+find "$app_dir/share/camview" -name __pycache__ -prune -exec rm -rf {} +
+if ! PYTHONPATH="$app_dir/share/camview" python3 -s -m camview prepare \
+        --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check"; then
+    echo "::warning::cloud camera patch no longer applies to $app_version; the AppImage falls back to stock behaviour"
+fi
+rm -rf "$work_dir/camview-check"
+
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
 
 source_desktop_file="$app_dir/share/applications/AnycubicSlicer.desktop"

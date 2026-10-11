@@ -23,6 +23,15 @@ The AppImage includes AppImageUpdate metadata. The updater uses the stable
 The AppImage requires glibc 2.38+ and GLib 2.76+. Use the Flatpak on older Linux
 distributions.
 
+### Cloud camera
+
+Upstream cannot show cloud printer cameras on Linux (the system WebKitGTK has no
+WebRTC). The AppImage works around this: when you press play on a cloud printer, the
+video opens in a small Chromium window. It needs `python3` (3.9+) and a Chromium-family
+browser (Chromium, Chrome, Brave, or the `org.chromium.Chromium` Flatpak); otherwise the
+slicer behaves as before. Set `ANYCUBIC_CLOUD_CAMERA=0` to disable it. Details are in
+`docs/cloud-video-investigation.md` and `tools/cloud-camera/README.md`.
+
 ## Automated Updates
 
 The GitHub Actions workflow in `.github/workflows/appimage.yml` runs daily at

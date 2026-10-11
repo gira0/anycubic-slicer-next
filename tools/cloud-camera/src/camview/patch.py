@@ -4,6 +4,8 @@ The web UI is a zip archive embedded in libWorkbench.so. We never modify
 libWorkbench.so (the slicer crashes on any change to it); instead the patched
 copy is loaded through the ACNEXT_WORKBENCH_ENV_VAR URL override.
 """
+from __future__ import annotations
+
 import io
 import re
 import struct
@@ -13,6 +15,8 @@ from pathlib import Path
 GATE = "return platformIsLinux === true && printerType === 'cloud';"
 GATE_OFF = "return platformIsLinux === null && printerType === 'cloud';"
 VIDEO_JS = "js/src_views_workbench2_WorkbenchV3_vue.js"
+# Bump when the patch changes so cached patched UIs are rebuilt.
+PATCH_VERSION = 1
 
 
 class PatchError(RuntimeError):
@@ -42,6 +46,7 @@ def _replace_once(text: str, old: str, new: str, what: str) -> str:
 
 HANDOFF = """async startShengwangStream(printer) {
       const __cv = window.__CAMVIEW;
+      if (!__cv) throw new Error('camview: helper not configured (missing cv parameter)');
       const res = await (0,%(mod)s.getAwsToken)({
         order_id: 1001,
         printer_id: printer.id,
@@ -64,7 +69,7 @@ HANDOFF = """async startShengwangStream(printer) {
     async startShengwangStreamUnused(printer) {"""
 
 
-def patch_webui(root: Path, helper_url: str, token: str) -> None:
+def patch_webui(root: Path) -> None:
     video = root / VIDEO_JS
     if not video.exists():
         raise PatchError(f"{VIDEO_JS} not found in the extracted web UI")
@@ -89,9 +94,13 @@ def patch_webui(root: Path, helper_url: str, token: str) -> None:
     )
     video.write_text(js, encoding="utf-8")
 
-    # 4. Tell the page where the helper is (and mark the override visibly).
+    # 4. Let the page find the helper. The launcher passes ?cv=PORT.TOKEN in the
+    #    URL; the slicer appends its own query after it, so parse it tolerantly.
     index = root / "index.html"
     html = index.read_text(encoding="utf-8")
-    cfg = f'<script>window.__CAMVIEW={{url:"{helper_url}",token:"{token}"}};</script>'
+    cfg = (
+        "<script>(function(){var m=/[?&]cv=(\\d+)\\.([\\w-]+)/.exec(location.search);"
+        "if(m){window.__CAMVIEW={url:'http://127.0.0.1:'+m[1],token:m[2]};}})();</script>"
+    )
     html = _replace_once(html, "<head>", "<head>" + cfg, "index.html <head>")
     index.write_text(html, encoding="utf-8")

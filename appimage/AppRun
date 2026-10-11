@@ -1,6 +1,32 @@
 #!/bin/bash
 DIR=$(readlink -f "$0" | xargs dirname)
 
+# Optional cloud camera support (see docs/cloud-video-investigation.md).
+# The system WebKitGTK has no WebRTC, so a helper patches a copy of the Workbench
+# web UI and shows cloud camera streams in a Chromium-family browser window. It is
+# started here, before the exports below, so Python and the browser do not see the
+# bundled libraries. Anything missing (python3 >= 3.9, a browser, a matching patch)
+# silently falls back to the stock slicer. Disable with ANYCUBIC_CLOUD_CAMERA=0.
+if [ "${ANYCUBIC_CLOUD_CAMERA:-1}" != "0" ] && [ -d "$DIR/share/camview/camview" ] \
+        && python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+    CAMVIEW_READY=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/camview-ready.XXXXXX")
+    PYTHONPATH="$DIR/share/camview" python3 -s -m camview sidecar \
+        --lib "$DIR/lib/libWorkbench.so" --parent-pid $$ --ready-file "$CAMVIEW_READY" \
+        >/dev/null 2>&1 </dev/null &
+    CAMVIEW_PID=$!
+    for _ in $(seq 1 150); do
+        [ -s "$CAMVIEW_READY" ] && break
+        kill -0 "$CAMVIEW_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if [ -s "$CAMVIEW_READY" ]; then
+        ACNEXT_WORKBENCH_ENV_VAR=$(cat "$CAMVIEW_READY")
+        export ACNEXT_WORKBENCH_ENV_VAR
+    fi
+    rm -f "$CAMVIEW_READY"
+    unset CAMVIEW_READY CAMVIEW_PID
+fi
+
 export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin:$LD_LIBRARY_PATH"
 
 # FIXME: Slicer segfault workarounds (from OrcaSlicer)
