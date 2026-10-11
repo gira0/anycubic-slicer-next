@@ -27,9 +27,8 @@ distributions.
 
 Upstream cannot show cloud printer cameras on Linux (the system WebKitGTK has no
 WebRTC). The AppImage works around this: when you press play on a cloud printer, the
-video opens in a small Chromium window. It needs `python3` (3.9+) and a Chromium-family
-browser (Chromium, Chrome, Brave, or the `org.chromium.Chromium` Flatpak); otherwise the
-slicer behaves as before. Set `ANYCUBIC_CLOUD_CAMERA=0` to disable it. Details are in
+video opens in a small browser window. It needs `python3` (3.9+) and a browser (Chromium,
+Chrome, Brave or Firefox, including the Flatpaks); otherwise the slicer behaves as before. Set `ANYCUBIC_CLOUD_CAMERA=0` to disable it. Details are in
 `docs/cloud-video-investigation.md` and `tools/cloud-camera/README.md`.
 
 ## Automated Updates

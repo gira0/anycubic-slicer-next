@@ -24,7 +24,7 @@ REQUIRED = ("appid", "channel")
 
 
 def find_browser_command() -> list[str] | None:
-    """Command prefix for a Chromium-family browser, or None."""
+    """Command prefix for a browser (Chromium family preferred, then Firefox), or None."""
     import os
     override = os.environ.get("CAMVIEW_BROWSER")
     if override:
@@ -36,6 +36,13 @@ def find_browser_command() -> list[str] | None:
     for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "brave-browser"):
         if shutil.which(name):
             return [name]
+    # Firefox works too (verified with the Flatpak) but has no app-style window.
+    if shutil.which("flatpak"):
+        r = subprocess.run(["flatpak", "info", "org.mozilla.firefox"], capture_output=True)
+        if r.returncode == 0:
+            return ["flatpak", "run", "org.mozilla.firefox"]
+    if shutil.which("firefox"):
+        return ["firefox"]
     return None
 
 
@@ -66,17 +73,22 @@ class State:
             return {"seq": self.seq, "session": self.session if self.seq != since else None}
 
 
+def viewer_args(cmd: list[str], url: str) -> list[str]:
+    """Command line that opens url in a small window for the given browser command."""
+    if any("firefox" in part.lower() for part in cmd):
+        # Firefox has no app mode; open a new window.
+        return cmd + ["--new-window", url]
+    return cmd + [f"--app={url}", "--window-size=1024,636", "--autoplay-policy=no-user-gesture-required"]
+
+
 def launch_viewer(state: State) -> None:
     url = f"http://127.0.0.1:{state.port}/viewer?t={state.token}"
     cmd = find_browser_command()
     if cmd is None:
-        print(f"camview: no Chromium-family browser found; open this URL in one: {url}")
+        print(f"camview: no supported browser found; open this URL in one: {url}")
         return
     print("camview: opening the viewer window")
-    subprocess.Popen(
-        cmd + [f"--app={url}", "--window-size=1024,636", "--autoplay-policy=no-user-gesture-required"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    subprocess.Popen(viewer_args(cmd, url), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def make_handler(state: State):

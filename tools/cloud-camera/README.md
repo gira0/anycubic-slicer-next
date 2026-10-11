@@ -23,8 +23,10 @@ uv run camview run --appimage ~/AppImages/anycubicslicer.appimage
 Open the Workbench, select a **cloud** printer and press play **once**. A viewer window
 opens. (Pressing play repeatedly makes overlapping joins fail with `UID_CONFLICT`.)
 
-Requirements: `uv`, a Chromium-family browser (the Flatpak `org.chromium.Chromium`,
-`chromium`, `google-chrome` or `brave-browser`; or set `CAMVIEW_BROWSER`), network
+Requirements: `uv`, a browser: Chromium family (Flatpak `org.chromium.Chromium`,
+`chromium`, `google-chrome`, `brave-browser`; preferred, opens an app-style window) or
+Firefox (Flatpak `org.mozilla.firefox` or `firefox`; opens a normal window); or set
+`CAMVIEW_BROWSER`, network
 access to download the Agora Web SDK once (cached in `~/.cache/camview`, SHA-256
 verified).
 
@@ -43,7 +45,7 @@ The AppImage built by `appimage/build-latest.sh` bundles this package under
   patch version. Patched copies of Anycubic's web assets are never shipped in releases.
 - It passes the helper port and token in the URL (`?cv=PORT.TOKEN`; the slicer appends its
   own query after it). It exits when the slicer exits.
-- If anything is missing (no `python3`, no Chromium-family browser, the patch no longer
+- If anything is missing (no `python3`, no supported browser, the patch no longer
   matches the installed slicer) nothing is written and the stock slicer starts. The build
   prints a `::warning::` when the patch no longer applies to a new slicer version.
 - Disable with `ANYCUBIC_CLOUD_CAMERA=0`. Set `CAMVIEW_BROWSER` to choose the browser
@@ -64,4 +66,5 @@ The AppImage built by `appimage/build-latest.sh` bundles this package under
   viewer window.
 - It depends on undocumented behaviour and breaks if Anycubic changes the web UI;
   patch failures abort with a clear message instead of running a half-patched UI.
-- Agora encryption in the browser is untested on Firefox.
+- Firefox is verified with the Flatpak on Kobra S1 (including Agora encryption); a
+  natively installed `firefox` should behave the same but is untested.

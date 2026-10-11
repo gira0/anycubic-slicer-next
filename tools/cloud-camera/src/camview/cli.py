@@ -62,7 +62,7 @@ def cmd_run(args) -> int:
             sys.exit(f"camview: {e}")
         env = dict(os.environ, ACNEXT_WORKBENCH_ENV_VAR=f"{(root / 'index.html').as_uri()}?cv={state.port}.{token}")
         if server.find_browser_command() is None:
-            print("camview: warning: no Chromium-family browser found; set CAMVIEW_BROWSER")
+            print("camview: warning: no supported browser (Chromium family or Firefox) found; set CAMVIEW_BROWSER")
         print("camview: starting the slicer with the patched Workbench")
         try:
             return subprocess.call([str(appimage.resolve()), *args.slicer_args], env=env)

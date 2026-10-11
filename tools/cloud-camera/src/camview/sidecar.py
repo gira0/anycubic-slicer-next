@@ -67,7 +67,7 @@ def _alive(pid: int) -> bool:
 
 def run_sidecar(lib: Path, parent_pid: int, ready_file: Path) -> int:
     if server.find_browser_command() is None:
-        _log("no Chromium-family browser found; cloud camera support disabled "
+        _log("no supported browser (Chromium family or Firefox) found; cloud camera support disabled "
              "(set CAMVIEW_BROWSER to enable)")
         return 3
     try:
