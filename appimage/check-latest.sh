@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=appimage/fetch-upstream.sh
+source "$script_dir/fetch-upstream.sh"
+
 apt_base_url="${APT_BASE_URL:-https://cdn-universe-slicer.anycubic.com/prod}"
 work_dir="${RUNNER_TEMP:-/tmp}/anycubic-slicer-version-check"
 deb_path="$work_dir/anycubicslicernext.deb"
@@ -8,7 +12,7 @@ deb_path="$work_dir/anycubicslicernext.deb"
 rm -rf "$work_dir"
 mkdir -p "$work_dir"
 
-deb_filename=$(curl -fsSL "$apt_base_url/dists/noble/main/binary-amd64/Packages" | awk '
+deb_filename=$(fetch_upstream "$apt_base_url/dists/noble/main/binary-amd64/Packages" | awk '
     /^Package: anycubicslicernext$/ { in_package=1; next }
     in_package && /^Filename:/ { print $2; exit }
     in_package && /^$/ { in_package=0 }
@@ -18,7 +22,7 @@ if [[ -z "$deb_filename" ]]; then
     exit 1
 fi
 
-curl -fsSL -o "$deb_path" "$apt_base_url/$deb_filename"
+fetch_upstream -o "$deb_path" "$apt_base_url/$deb_filename"
 app_version=$(dpkg-deb -f "$deb_path" Version)
 if [[ -z "$app_version" ]]; then
     echo "Could not determine the application version from $deb_path" >&2
