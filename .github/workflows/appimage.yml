@@ -6,7 +6,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+# A scheduled run and a manual run must not publish the same release at once.
+concurrency:
+  group: appimage-release
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -16,10 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y binutils curl libfuse2t64
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Detect published application version
         id: version
@@ -42,10 +44,17 @@ jobs:
             "AnycubicSlicer-x86_64.AppImage" \
             "AnycubicSlicer-x86_64.AppImage.zsync")
 
-          if ! assets=$(gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null); then
-            echo "No release exists for $APP_VERSION."
-            echo 'should_build=true' >> "$GITHUB_OUTPUT"
-            exit 0
+          view_status=0
+          assets=$(gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>"$RUNNER_TEMP/view-error.txt") || view_status=$?
+          if (( view_status != 0 )); then
+            # Only a missing release means "build"; any other API error fails the run.
+            if grep -qi 'release not found' "$RUNNER_TEMP/view-error.txt"; then
+              echo "No release exists for $APP_VERSION."
+              echo 'should_build=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/view-error.txt" >&2
+            exit "$view_status"
           fi
 
           missing_assets=$(comm -23 <(printf '%s\n' "$required_assets" | sort) <(printf '%s\n' "$assets" | sort))
@@ -62,15 +71,19 @@ jobs:
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y binutils curl libfuse2t64 zsync
 
       - name: Build latest AppImage
         id: build
+        env:
+          EXPECTED_APP_VERSION: ${{ needs.check.outputs.app_version }}
         run: ./appimage/build-latest.sh
 
       - name: Publish release when the app version is new

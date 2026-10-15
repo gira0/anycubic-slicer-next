@@ -48,7 +48,7 @@ flatpak install flathub org.gnome.Platform//48 org.gnome.Sdk//48
 
 ## Checking for New Versions
 
-Anycubic publishes .deb packages to their APT repository. The deb package version does **NOT** match the actual app version (e.g. deb version `1.3.96` contains app version `1.3.9.3`).
+Anycubic publishes .deb packages to their APT repository. Releases are tagged with the Debian package `Version` (for example `2.0.06`). Releases up to `1.3.9.4` used the application version read from the binary instead, but current binaries no longer contain that string.
 
 ### Step 1: Check the APT Packages file
 
@@ -66,32 +66,31 @@ Filename: dists/noble/main/binary-amd64/develop_AnycubicSlicerNext-1.3.96_202601
 **Important notes:**
 - The `Filename` field contains the actual download path — it is NOT predictable from the version number alone
 - The filename may have a `develop_` prefix — this does NOT necessarily mean it's unstable
-- The `Version` field (e.g. `1.3.96`) does NOT match the actual app version (e.g. `1.3.9.3`)
+- The `Version` field is the version used for the release tag and bundle filename
+- The `SHA256` field is the checksum of the .deb; verify the download against it
 
 ### Step 2: Download the .deb
 
 ```bash
-DEB_FILENAME=$(curl -s https://cdn-universe-slicer.anycubic.com/prod/dists/noble/main/binary-amd64/Packages | grep "^Filename:" | awk '{print $2}')
+DEB_FILENAME=$(curl -fsS https://cdn-universe-slicer.anycubic.com/prod/dists/noble/main/binary-amd64/Packages \
+  | awk '/^Package: anycubicslicernext$/ {p=1; next} p && /^Filename:/ {print $2; exit} p && /^$/ {p=0}')
 curl -L -o anycubicslicernext.deb "https://cdn-universe-slicer.anycubic.com/prod/${DEB_FILENAME}"
 ```
 
-### Step 3: Check the actual app version
+### Step 3: Read the version
 
 ```bash
-mkdir -p /tmp/version-check && cd /tmp/version-check
-ar x /path/to/anycubicslicernext.deb
-tar xzf data.tar.gz
-strings usr/bin/AnycubicSlicerNext | grep "AnycubicSlicerNext/"
+dpkg-deb -f anycubicslicernext.deb Version
 ```
 
-This will output something like `AnycubicSlicerNext/1.3.9.3` — that is the real app version.
+That is the version to use for the release tag and bundle filename.
 
 ## Build Process
 
 ### Step 1: Set up workspace
 
 ```bash
-APP_VERSION="1.3.9.3"
+APP_VERSION="2.0.06"
 mkdir -p "Anycubic-Flatpak ${APP_VERSION}"
 cd "Anycubic-Flatpak ${APP_VERSION}"
 ```
@@ -185,7 +184,7 @@ grep -q org.freedesktop.Platform.GL.nvidia /.flatpak-info && export WEBKIT_DISAB
 # UTF-8 locale to prevent segfaults
 export LC_ALL=C.UTF-8
 # Find bundled application libraries
-export LD_LIBRARY_PATH="/app/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/app/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cd /app
 exec /app/bin/AnycubicSlicerNext "$@"
 ```
@@ -208,10 +207,9 @@ exec /app/bin/AnycubicSlicerNext "$@"
 When a new version is released:
 
 1. **Download the new .deb** (see "Checking for New Versions" above)
-2. **Check the real app version** with `strings` on the binary
-3. **Update the manifest** — change these fields:
-   - `branch:` — set to the new app version
-   - `sources: path:` — if you renamed the deb file
+2. **Read the version** with `dpkg-deb -f anycubicslicernext.deb Version`
+3. **Update the manifest** — change the `branch:` field to the new version. The
+   manifest always reads `anycubicslicernext.deb` next to it, so keep that name.
 4. **Clean and rebuild**:
    ```bash
    rm -rf build repo .flatpak-builder
@@ -259,7 +257,7 @@ flatpak build-bundle repo "AnycubicSlicer-${APP_VERSION}.flatpak" \
 Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
-- **Tag/Title**: The app version (e.g. `1.3.9.3`)
+- **Tag/Title**: The deb package version (e.g. `2.0.06`)
 - **Assets**: `AnycubicSlicer-<VERSION>-x86_64.AppImage` and `AnycubicSlicer-<VERSION>.flatpak`
 
 ## Credits

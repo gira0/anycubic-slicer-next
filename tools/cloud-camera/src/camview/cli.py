@@ -40,7 +40,10 @@ def cmd_prepare(args) -> int:
     """Extract and patch the web UI into a directory (for inspection)."""
     out = Path(args.out)
     with tempfile.TemporaryDirectory(prefix="camview-") as tmp:
-        root = _prepare(args, Path(tmp), "http://127.0.0.1:0", "TOKEN")
+        try:
+            root = _prepare(args, Path(tmp), "http://127.0.0.1:0", "TOKEN")
+        except patch.PatchError as e:
+            sys.exit(f"camview: {e}")
         shutil.copytree(root, out, dirs_exist_ok=True)
     print(f"Patched web UI written to {out}")
     return 0
@@ -50,7 +53,10 @@ def cmd_run(args) -> int:
     appimage = Path(args.appimage or os.environ.get("CAMVIEW_APPIMAGE", "")).expanduser()
     if not appimage.is_file():
         sys.exit("camview: pass --appimage PATH or set CAMVIEW_APPIMAGE")
-    sdk_path = sdk.ensure_sdk()
+    try:
+        sdk_path = sdk.ensure_sdk()
+    except sdk.SdkError as e:
+        sys.exit(f"camview: {e}")
     token = secrets.token_urlsafe(24)
     httpd, state = server.start_server(token, sdk_path)
     helper_url = f"http://127.0.0.1:{state.port}"

@@ -14,23 +14,29 @@ appimage_tool="$work_dir/appimagetool"
 rm -rf "$work_dir"
 mkdir -p "$work_dir" "$app_dir"
 
-# Capture the index before parsing it: awk exits at the first match, and with
-# pipefail a curl killed by SIGPIPE would abort the build.
 packages=$(fetch_upstream "$packages_url")
-deb_filename=$(awk '
-    /^Package: anycubicslicernext$/ { in_package=1; next }
-    in_package && /^Filename:/ { print $2; exit }
-    in_package && /^$/ { in_package=0 }
-' <<< "$packages")
-if [[ -z "$deb_filename" ]]; then
-    echo "Could not find anycubicslicernext in the APT index" >&2
+deb_filename=$(package_field Filename <<< "$packages")
+deb_sha256=$(package_field SHA256 <<< "$packages")
+if [[ -z "$deb_filename" || -z "$deb_sha256" ]]; then
+    echo "Could not find the anycubicslicernext Filename and SHA256 in the APT index" >&2
     exit 1
 fi
 
 fetch_upstream -o "$deb_path" "$apt_base_url/$deb_filename"
+if ! sha256sum --check --quiet <<< "$deb_sha256  $deb_path"; then
+    echo "Downloaded package does not match the SHA256 in the APT index" >&2
+    exit 1
+fi
 app_version=$(dpkg-deb -f "$deb_path" Version)
 if [[ -z "$app_version" ]]; then
     echo "Could not determine the application version from $deb_path" >&2
+    exit 1
+fi
+validate_version "$app_version"
+# The workflow passes the version the check job verified. Building a different
+# one would publish a release whose completeness was never checked.
+if [[ -n "${EXPECTED_APP_VERSION:-}" && "$app_version" != "$EXPECTED_APP_VERSION" ]]; then
+    echo "Upstream changed from $EXPECTED_APP_VERSION to $app_version since the check; the next run picks it up" >&2
     exit 1
 fi
 
@@ -63,11 +69,16 @@ fi
 # AppImageUpdate reads it. A key in the .desktop file is not used.
 update_information='gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
 
-if [[ ! -x "$appimage_tool" ]]; then
-    curl -fsSL -o "$appimage_tool" \
-        https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-    chmod +x "$appimage_tool"
+# AppImageKit is archived, so this continuous build no longer changes. The
+# checksum makes sure the tool that packages the release is the one we tested.
+appimage_tool_sha256=b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2
+curl -fsSL -o "$appimage_tool" \
+    https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+if ! sha256sum --check --quiet <<< "$appimage_tool_sha256  $appimage_tool"; then
+    echo "appimagetool does not match the pinned SHA256" >&2
+    exit 1
 fi
+chmod +x "$appimage_tool"
 
 versioned_appimage="$work_dir/AnycubicSlicer-${app_version}-x86_64.AppImage"
 latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"

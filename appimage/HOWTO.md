@@ -35,7 +35,7 @@ The AppImage requires a modern Linux distribution with glibc 2.38+ and GLib 2.76
 
 ## Checking for New Versions
 
-Anycubic publishes .deb packages to their APT repository. The deb package version does **NOT** match the actual app version (e.g. deb version `1.3.96` contains app version `1.3.9.3`). Follow these steps to check for updates:
+Anycubic publishes .deb packages to their APT repository. Releases are tagged with the Debian package `Version` (for example `2.0.06`). Releases up to `1.3.9.4` used the application version read from the binary instead, but current binaries no longer contain that string. Follow these steps to check for updates:
 
 ### Step 1: Check the APT Packages file
 
@@ -55,7 +55,8 @@ Filename: dists/noble/main/binary-amd64/develop_AnycubicSlicerNext-1.3.96_202601
 **Important notes:**
 - The `Filename` field contains the actual download path — it is NOT predictable from the version number alone
 - The filename may have a `develop_` prefix — this does NOT necessarily mean it's unstable
-- The `Version` field (e.g. `1.3.96`) does NOT match the actual app version (e.g. `1.3.9.3`)
+- The `Version` field is the version used for the release tag and AppImage filename
+- The `SHA256` field is the checksum of the .deb; verify the download against it
 
 ### Step 2: Download the .deb using the Filename from the Packages file
 
@@ -65,31 +66,22 @@ curl -L -o anycubicslicernext.deb \
   "https://cdn-universe-slicer.anycubic.com/prod/<FILENAME_FROM_PACKAGES_FILE>"
 ```
 
-### Step 3: Check the actual app version
-
-The deb metadata version doesn't match the real app version. To find the actual version, extract the deb and check the binary:
+### Step 3: Read the version
 
 ```bash
-mkdir -p /tmp/version-check && cd /tmp/version-check
-ar x /path/to/anycubicslicernext.deb
-tar xzf data.tar.gz
-strings usr/bin/AnycubicSlicerNext | grep "AnycubicSlicerNext/"
+dpkg-deb -f anycubicslicernext.deb Version
 ```
 
-This will output something like:
-```
-AnycubicSlicerNext/1.3.9.3
-```
-
-That is the real app version to use for the AppImage filename and GitHub release.
+That is the version to use for the AppImage filename and GitHub release. It is
+the same value as the `Version` field in the Packages file.
 
 ## Build Process
 
 ### Step 1: Set up workspace
 
 ```bash
-# Use the real app version (from the binary, NOT the deb version)
-APP_VERSION="1.3.9.3"
+# Use the Debian package version (see "Checking for New Versions")
+APP_VERSION="2.0.06"
 
 mkdir -p "Anycubic-Appimage ${APP_VERSION}/ubuntu-24-deb-file"
 cd "Anycubic-Appimage ${APP_VERSION}"
@@ -99,7 +91,8 @@ cd "Anycubic-Appimage ${APP_VERSION}"
 
 ```bash
 # First, get the filename from the Packages file
-DEB_FILENAME=$(curl -s https://cdn-universe-slicer.anycubic.com/prod/dists/noble/main/binary-amd64/Packages | grep "^Filename:" | awk '{print $2}')
+DEB_FILENAME=$(curl -fsS https://cdn-universe-slicer.anycubic.com/prod/dists/noble/main/binary-amd64/Packages \
+  | awk '/^Package: anycubicslicernext$/ {p=1; next} p && /^Filename:/ {print $2; exit} p && /^$/ {p=0}')
 echo "Downloading: $DEB_FILENAME"
 
 # Download
@@ -113,7 +106,7 @@ curl -L -o ubuntu-24-deb-file/anycubicslicernext.deb \
 mkdir -p extracted
 cd extracted
 ar x ../ubuntu-24-deb-file/anycubicslicernext.deb
-tar xzf data.tar.gz
+tar xf data.tar.*
 cd ..
 ```
 
@@ -242,11 +235,11 @@ gh release create "${APP_VERSION}" \
 
 ### Deb Version vs App Version
 
-Anycubic's deb packaging uses a **different version number** than the actual application. The deb `Version` field is a flattened/abbreviated form:
+Anycubic's deb packaging uses a **different version number** than the application's own version. The deb `Version` field is a flattened/abbreviated form:
 - Deb `1.3.7171` = App `1.3.7.3` (roughly)
 - Deb `1.3.96` = App `1.3.9.3`
 
-Always check the binary with `strings` to get the real version for naming the AppImage and GitHub release.
+Older releases (up to `1.3.9.4`) were tagged with the app version found by running `strings` on the binary. Current binaries no longer contain that string, so releases from `2.0.06` on are tagged with the deb `Version`, which is what `appimage/check-latest.sh` reports.
 
 ### Directory Structure
 
@@ -357,8 +350,8 @@ undefined symbol: g_once_init_leave_pointer
 Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
-- **Tag/Title**: The app version (e.g. `1.3.9.3`)
-- **Notes**: `Anycubic Slicer Next as AppImage.`
+- **Tag/Title**: The deb package version (e.g. `2.0.06`)
+- **Notes**: `Anycubic Slicer Next as AppImage. The AppImage includes AppImageUpdate metadata.`
 - **Asset**: `AnycubicSlicer-<VERSION>-x86_64.AppImage`
 
 ## Credits

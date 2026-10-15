@@ -3,10 +3,14 @@ serves the viewer page that joins it in a WebRTC-capable browser.
 
 Security: bound to 127.0.0.1, every request needs the per-run random token,
 the Host header is checked (DNS rebinding), and sessions expire after SESSION_TTL
-seconds. Session contents (temporary credentials) are never logged.
+seconds. Session contents (temporary credentials) are never logged. The viewer
+is opened with a one-time ticket instead of the token, because the browser's
+command line is readable by other local users; the page gets the token in its
+response body.
 """
 import hmac
 import json
+import secrets
 import shutil
 import subprocess
 import threading
@@ -18,6 +22,8 @@ from urllib.parse import parse_qs, urlparse
 
 SESSION_TTL = 120          # seconds a session stays available to the viewer
 VIEWER_ALIVE = 5           # viewer is "open" if it polled within this many seconds
+VIEWER_LAUNCH_GRACE = 30   # seconds a just-launched viewer gets to start polling
+TOKEN_PLACEHOLDER = "__CAMVIEW_TOKEN__"
 MAX_BODY = 64 * 1024
 REQUIRED = ("appid", "channel")
 
@@ -46,6 +52,8 @@ class State:
         self.seq = 0
         self.session: dict | None = None
         self.last_poll = 0.0
+        self.launched_at: float | None = None
+        self.ticket: str | None = None
         self.port = 0
         self._expiry: threading.Timer | None = None
 
@@ -68,16 +76,39 @@ class State:
             self._expiry = threading.Timer(SESSION_TTL, self._expire, args=(self.seq,))
             self._expiry.daemon = True
             self._expiry.start()
-            return time.monotonic() - self.last_poll > VIEWER_ALIVE
+            now = time.monotonic()
+            if now - self.last_poll <= VIEWER_ALIVE:
+                return False
+            # A browser can take longer than VIEWER_ALIVE to start. Without this,
+            # a second session in that window opens a second viewer, and both
+            # join with the same uid (UID_CONFLICT).
+            if self.launched_at is not None and now - self.launched_at <= VIEWER_LAUNCH_GRACE:
+                return False
+            self.launched_at = now
+            return True
+
+    def new_ticket(self) -> str:
+        with self.lock:
+            self.ticket = secrets.token_urlsafe(24)
+            return self.ticket
+
+    def redeem_ticket(self, supplied: str | None) -> bool:
+        """Accept the current viewer ticket once."""
+        with self.lock:
+            ok = bool(supplied) and self.ticket is not None and hmac.compare_digest(supplied, self.ticket)
+            if ok:
+                self.ticket = None
+            return ok
 
     def poll(self, since: int) -> dict:
         with self.lock:
             self.last_poll = time.monotonic()
+            self.launched_at = None
             return {"seq": self.seq, "session": self.session if self.seq != since else None}
 
 
 def launch_viewer(state: State) -> None:
-    url = f"http://127.0.0.1:{state.port}/viewer?t={state.token}"
+    url = f"http://127.0.0.1:{state.port}/viewer?ticket={state.new_ticket()}"
     cmd = find_browser_command()
     if cmd is None:
         print(f"camview: no Chromium-family browser found; open this URL in one: {url}")
@@ -126,11 +157,14 @@ def make_handler(state: State):
                 return self._send(403)
             url = urlparse(self.path)
             q = parse_qs(url.query)
+            if url.path == "/viewer":
+                if not state.redeem_ticket(q.get("ticket", [None])[0]):
+                    return self._send(403)
+                html = resources.files("camview").joinpath("viewer/viewer.html").read_text(encoding="utf-8")
+                html = html.replace(TOKEN_PLACEHOLDER, state.token)
+                return self._send(200, html.encode(), "text/html; charset=utf-8")
             if not self._token_ok(q.get("t", [None])[0]):
                 return self._send(403)
-            if url.path == "/viewer":
-                html = resources.files("camview").joinpath("viewer/viewer.html").read_bytes()
-                return self._send(200, html, "text/html; charset=utf-8")
             if url.path == "/agora.js":
                 return self._send(200, state.sdk_path.read_bytes(), "text/javascript; charset=utf-8")
             if url.path == "/session":

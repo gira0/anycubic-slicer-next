@@ -9,8 +9,9 @@ workarounds unless a tested replacement is available.
 ## AppImage Automation
 
 - The daily workflow is `.github/workflows/appimage.yml`.
-- `appimage/check-latest.sh` reads Anycubic's APT metadata and extracts the real
-  application version from the binary. The Debian package version is different.
+- `appimage/check-latest.sh` reads the Debian package `Version` from Anycubic's
+  APT metadata; release tags use it (from `2.0.06` on). Current binaries no
+  longer embed the application version, so do not go back to `strings`.
 - `appimage/build-latest.sh` builds the AppImage, injects AppImageUpdate metadata,
   and creates the matching `.zsync` file.
 - The workflow must check release completeness before doing the expensive build.

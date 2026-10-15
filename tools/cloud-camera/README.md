@@ -35,6 +35,9 @@ directory for inspection.
 
 - The helper listens on `127.0.0.1` only; every request needs a random per-run token,
   and the `Host` header is checked.
+- The viewer window is opened with a one-time ticket, not the token, because other
+  local users can read a browser's command line. Reloading the viewer window
+  therefore shows 403; close it and press play again.
 - The session contains temporary Agora credentials. They are held in memory for two
   minutes and never logged or written to disk.
 - Do not paste logs that contain tokens or session data.

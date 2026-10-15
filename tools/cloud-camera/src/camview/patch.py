@@ -25,10 +25,16 @@ def extract_webui(lib: Path, dest: Path) -> None:
     eocd = data.rfind(b"PK\x05\x06")
     if eocd < 0:
         raise PatchError(f"no embedded zip archive found in {lib}")
-    _, cd_size, cd_off = struct.unpack_from("<10xHII", data, eocd)
+    _, cd_size, cd_off, comment_len = struct.unpack_from("<10xHIIH", data, eocd)
     zip_start = eocd - cd_size - cd_off
-    with zipfile.ZipFile(io.BytesIO(data[zip_start:])) as z:
-        z.extractall(dest)
+    # End the slice at the archive's own end: zipfile only looks for the end
+    # record near the end of the buffer, so trailing library bytes would hide it.
+    zip_end = eocd + 22 + comment_len
+    try:
+        with zipfile.ZipFile(io.BytesIO(data[zip_start:zip_end])) as z:
+            z.extractall(dest)
+    except zipfile.BadZipFile as e:
+        raise PatchError(f"the zip archive embedded in {lib} is unreadable: {e}") from e
 
 
 def _replace_once(text: str, old: str, new: str, what: str) -> str:
