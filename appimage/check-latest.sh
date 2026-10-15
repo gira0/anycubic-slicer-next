@@ -12,11 +12,23 @@ deb_path="$work_dir/anycubicslicernext.deb"
 rm -rf "$work_dir"
 mkdir -p "$work_dir"
 
-deb_filename=$(fetch_upstream "$apt_base_url/dists/noble/main/binary-amd64/Packages" | awk '
+# An expired or otherwise invalid upstream certificate is Anycubic's problem and
+# can last for days. Report it as a warning and skip this run without failing,
+# so the daily schedule does not send a failure notice every day.
+UPSTREAM_TLS_ANNOTATION=warning
+fetch_status=0
+packages=$(fetch_upstream "$apt_base_url/dists/noble/main/binary-amd64/Packages") || fetch_status=$?
+if (( fetch_status == 60 )); then
+    echo "Skipping version check until the upstream certificate is fixed." >&2
+    exit 0
+fi
+(( fetch_status == 0 )) || exit "$fetch_status"
+
+deb_filename=$(awk '
     /^Package: anycubicslicernext$/ { in_package=1; next }
     in_package && /^Filename:/ { print $2; exit }
     in_package && /^$/ { in_package=0 }
-')
+' <<< "$packages")
 if [[ -z "$deb_filename" ]]; then
     echo "Could not find anycubicslicernext in the APT index" >&2
     exit 1
