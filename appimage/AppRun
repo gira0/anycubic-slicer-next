@@ -1,7 +1,7 @@
 #!/bin/bash
 DIR=$(readlink -f "$0" | xargs dirname)
 
-export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # FIXME: Slicer segfault workarounds (from OrcaSlicer)
 # 1) Slicer will segfault on systems where locale info is not as expected (i.e. Holo-ISO arch-based distro)

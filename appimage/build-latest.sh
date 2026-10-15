@@ -14,11 +14,14 @@ appimage_tool="$work_dir/appimagetool"
 rm -rf "$work_dir"
 mkdir -p "$work_dir" "$app_dir"
 
-deb_filename=$(fetch_upstream "$packages_url" | awk '
+# Capture the index before parsing it: awk exits at the first match, and with
+# pipefail a curl killed by SIGPIPE would abort the build.
+packages=$(fetch_upstream "$packages_url")
+deb_filename=$(awk '
     /^Package: anycubicslicernext$/ { in_package=1; next }
     in_package && /^Filename:/ { print $2; exit }
     in_package && /^$/ { in_package=0 }
-')
+' <<< "$packages")
 if [[ -z "$deb_filename" ]]; then
     echo "Could not find anycubicslicernext in the APT index" >&2
     exit 1
@@ -56,12 +59,9 @@ if [[ -f "$icon_file" ]]; then
     cp "$icon_file" "$app_dir/AnycubicSlicer.png"
 fi
 
-update_information='X-AppImage-UpdateInformation=gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
-if grep -q '^X-AppImage-UpdateInformation=' "$desktop_file"; then
-    sed -i "s|^X-AppImage-UpdateInformation=.*|$update_information|" "$desktop_file"
-else
-    printf '\n%s\n' "$update_information" >> "$desktop_file"
-fi
+# appimagetool embeds this in the runtime's .upd_info section, which is where
+# AppImageUpdate reads it. A key in the .desktop file is not used.
+update_information='gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
 
 if [[ ! -x "$appimage_tool" ]]; then
     curl -fsSL -o "$appimage_tool" \
@@ -71,9 +71,12 @@ fi
 
 versioned_appimage="$work_dir/AnycubicSlicer-${app_version}-x86_64.AppImage"
 latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" "$app_dir" "$versioned_appimage"
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" \
+    -u "$update_information" "$app_dir" "$versioned_appimage"
 cp "$versioned_appimage" "$latest_appimage"
-zsyncmake "$latest_appimage" -o "$latest_appimage.zsync"
+# A relative URL resolves next to the .zsync file on the release page. Without
+# -u, zsyncmake records this runner's local path.
+zsyncmake -u "$(basename -- "$latest_appimage")" -o "$latest_appimage.zsync" "$latest_appimage"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
