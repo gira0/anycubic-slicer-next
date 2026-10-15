@@ -79,9 +79,11 @@ class State:
             now = time.monotonic()
             if now - self.last_poll <= VIEWER_ALIVE:
                 return False
-            # A browser can take longer than VIEWER_ALIVE to start. Without this,
-            # a second session in that window opens a second viewer, and both
-            # join with the same uid (UID_CONFLICT).
+            # A browser can take longer than VIEWER_ALIVE to start, and the viewer
+            # stops polling while it joins. Without this, a second session in
+            # that window opens a second viewer, and both join with the same uid
+            # (UID_CONFLICT). The grace runs its full length, even after the
+            # first poll.
             if self.launched_at is not None and now - self.launched_at <= VIEWER_LAUNCH_GRACE:
                 return False
             self.launched_at = now
@@ -103,7 +105,6 @@ class State:
     def poll(self, since: int) -> dict:
         with self.lock:
             self.last_poll = time.monotonic()
-            self.launched_at = None
             return {"seq": self.seq, "session": self.session if self.seq != since else None}
 
 

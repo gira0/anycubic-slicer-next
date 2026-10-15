@@ -46,9 +46,10 @@ package_field() {
 }
 
 # The version becomes a release tag, a file name and a workflow output, so
-# reject anything that is not a plain Debian-style version string.
+# reject anything that is not a plain version string or not a valid Git tag
+# (Git refuses "~", "..", and a trailing "." or ".lock").
 validate_version() {
-    if [[ ! "$1" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]]; then
+    if [[ ! "$1" =~ ^[0-9][0-9A-Za-z.+-]*$ || "$1" == *..* || "$1" == *. || "$1" == *.lock ]]; then
         echo "Refusing unexpected upstream version string: $1" >&2
         exit 1
     fi
