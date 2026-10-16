@@ -30,14 +30,14 @@ The GitHub Actions workflow in `.github/workflows/appimage.yml` runs daily at
 
 Each run:
 
-1. Reads the current package filename from Anycubic's APT repository.
-2. Extracts the real application version from the Debian binary. The Debian
-	package version and application version are different.
-3. Checks whether the matching GitHub release contains the versioned AppImage,
+1. Reads the current package version from Anycubic's APT repository. Releases
+	are tagged with this Debian package version (for example `2.0.06`).
+2. Checks whether the matching GitHub release contains the versioned AppImage,
 	stable AppImage, and `.zsync` asset.
-4. Skips the expensive AppImage build when the release is complete.
-5. Builds and publishes a new release, or repairs missing assets on an existing
-	release.
+3. Skips the expensive AppImage build when the release is complete.
+4. Downloads the package, verifies it against the checksum in the APT index,
+	then builds and publishes a new release, or repairs missing assets on an
+	existing release.
 
 The build and version detection scripts are in `appimage/`. The latest known
 application version is determined from the live APT package rather than being

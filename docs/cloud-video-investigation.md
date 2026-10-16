@@ -1,8 +1,9 @@
 # Cloud-connected video monitoring on Linux
 
 Investigation into enabling cloud-connected video monitoring in the Linux
-AppImage and Flatpak. **Outcome: not achievable with the packaging as it stands;
-nothing is patched.** Read this before trying again. Project rules are in
+AppImage and Flatpak. **Outcome: not achievable inside the packaged app as it
+stands, and no vendor binary is patched. A separate viewer works as a
+workaround; see "Working workaround" below.** Read this before trying again. Project rules are in
 `AGENTS.md`.
 
 ## Problem

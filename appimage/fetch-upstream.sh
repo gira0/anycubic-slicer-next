@@ -1,4 +1,4 @@
-# Download helper for Anycubic's APT repository, sourced by check-latest.sh and
+# Helpers for Anycubic's APT repository, sourced by check-latest.sh and
 # build-latest.sh. TLS verification stays on. When the server certificate fails
 # verification, report what the server presented so the failure is clearly an
 # upstream problem rather than a broken build. Set UPSTREAM_TLS_ANNOTATION to
@@ -33,5 +33,24 @@ report_certificate_problem() {
         printf '::%s title=Upstream certificate problem::%s\n' "$level" "$message" >&2
     else
         printf '%s\n' "$message" >&2
+    fi
+}
+
+# Print one field of the anycubicslicernext stanza from a Packages index on stdin.
+package_field() {
+    awk -v field="$1:" '
+        /^Package: anycubicslicernext$/ { in_package=1; next }
+        in_package && $1 == field { print $2; exit }
+        in_package && /^$/ { in_package=0 }
+    '
+}
+
+# The version becomes a release tag, a file name and a workflow output, so
+# reject anything that is not a plain version string or not a valid Git tag
+# (Git refuses "~", "..", and a trailing "." or ".lock").
+validate_version() {
+    if [[ ! "$1" =~ ^[0-9][0-9A-Za-z.+-]*$ || "$1" == *..* || "$1" == *. || "$1" == *.lock ]]; then
+        echo "Refusing unexpected upstream version string: $1" >&2
+        exit 1
     fi
 }

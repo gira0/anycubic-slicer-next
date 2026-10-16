@@ -24,7 +24,7 @@
   <button id="fs">Fullscreen</button>
 </div>
 <script>
-const token = new URLSearchParams(location.search).get('t');
+const token = '__CAMVIEW_TOKEN__';  // filled in by the helper
 const $ = (id) => document.getElementById(id);
 const setStatus = (t) => { $('status').textContent = t; document.title = 'Anycubic camera - ' + t; };
 let seq = 0, client = null, audioTrack = null, publishTimer = null;
