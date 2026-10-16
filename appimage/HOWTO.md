@@ -48,8 +48,9 @@ curl -s https://cdn-universe-slicer.anycubic.com/prod/dists/noble/main/binary-am
 This will show fields like:
 ```
 Package: anycubicslicernext
-Version: 1.3.96
-Filename: dists/noble/main/binary-amd64/develop_AnycubicSlicerNext-1.3.96_20260131_153250-Ubuntu_24_04_3_LTS.deb
+Version: 2.0.06
+Filename: dists/noble/main/binary-amd64/<package file name>.deb
+SHA256: <checksum of the .deb>
 ```
 
 **Important notes:**
@@ -225,19 +226,16 @@ gh release create "${APP_VERSION}" \
 
 ## Version History
 
-| App Version | Deb Version | Deb Filename | Date |
-|---|---|---|---|
-| 1.3.9.3 | 1.3.96 | `develop_AnycubicSlicerNext-1.3.96_20260131_153250-Ubuntu_24_04_3_LTS.deb` | 2026-01-31 |
-| 1.3.9.1 | 1.3.91 | (unknown) | 2026-01 |
-| 1.3.7.3 | 1.3.7171 | `AnycubicSlicerNext-1.3.7171_20250928_162543-Ubuntu_24_04_2_LTS.deb` | 2025-09-28 |
+| Release tag | Published |
+|---|---|
+| 2.0.06 | 2026-09-18 |
+| 1.3.9.4 | 2026-08-30 |
 
 ## Important Notes
 
 ### Deb Version vs App Version
 
-Anycubic's deb packaging uses a **different version number** than the application's own version. The deb `Version` field is a flattened/abbreviated form:
-- Deb `1.3.7171` = App `1.3.7.3` (roughly)
-- Deb `1.3.96` = App `1.3.9.3`
+Anycubic's deb `Version` can differ from the version the application shows about itself.
 
 Older releases (up to `1.3.9.4`) were tagged with the app version found by running `strings` on the binary. Current binaries no longer contain that string, so releases from `2.0.06` on are tagged with the deb `Version`, which is what `appimage/check-latest.sh` reports.
 
