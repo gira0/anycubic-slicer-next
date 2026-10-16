@@ -6,6 +6,17 @@ packages_url="$apt_base_url/dists/noble/main/binary-amd64/Packages"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=appimage/fetch-upstream.sh
 source "$script_dir/fetch-upstream.sh"
+# "original" is the unmodified AppImage. "camview" additionally ships the
+# tools/cloud-camera helper and is published as its own release stream.
+variant="${VARIANT:-original}"
+case "$variant" in
+    original) name_suffix='' ;;
+    camview) name_suffix='-camview' ;;
+    *)
+        echo "Unknown VARIANT '$variant'; expected 'original' or 'camview'" >&2
+        exit 1
+        ;;
+esac
 work_dir="${RUNNER_TEMP:-/tmp}/anycubic-slicer-build"
 deb_path="$work_dir/anycubicslicernext.deb"
 app_dir="$work_dir/AnycubicSlicer.AppDir"
@@ -46,7 +57,19 @@ ar x "$deb_path"
 tar -xf data.tar.*
 cp -a usr/. "$app_dir/"
 
-cp "$script_dir/AppRun" "$app_dir/AppRun"
+if [[ "$variant" == camview ]]; then
+    # AppRun.camview forwards everything except the "camview" subcommand to the
+    # unchanged AppRun, which stays next to it under another name.
+    cp "$script_dir/AppRun" "$app_dir/AppRun.slicer"
+    cp "$script_dir/AppRun.camview" "$app_dir/AppRun"
+    chmod +x "$app_dir/AppRun.slicer"
+    # The tool is pure standard library Python; the host provides python3.
+    mkdir -p "$app_dir/camview"
+    cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/camview/camview"
+    find "$app_dir/camview" -name __pycache__ -type d -prune -exec rm -rf {} +
+else
+    cp "$script_dir/AppRun" "$app_dir/AppRun"
+fi
 chmod +x "$app_dir/AppRun"
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
 
@@ -67,7 +90,16 @@ fi
 
 # appimagetool embeds this in the runtime's .upd_info section, which is where
 # AppImageUpdate reads it. A key in the .desktop file is not used.
-update_information='gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync'
+if [[ "$variant" == camview ]]; then
+    # An exact tag would pin the AppImage to the release it came from. The
+    # camview releases are published as pre-releases, and "latest-pre" follows
+    # only those, so this build never updates to the original stream (whose
+    # releases are regular ones) and the original never sees camview.
+    update_tag=latest-pre
+else
+    update_tag=latest
+fi
+update_information="gh-releases-zsync|gira0|anycubic-slicer-next|$update_tag|AnycubicSlicer${name_suffix}-x86_64.AppImage.zsync"
 
 # AppImageKit is archived, so this continuous build no longer changes. The
 # checksum makes sure the tool that packages the release is the one we tested.
@@ -80,8 +112,8 @@ if ! sha256sum --check --quiet <<< "$appimage_tool_sha256  $appimage_tool"; then
 fi
 chmod +x "$appimage_tool"
 
-versioned_appimage="$work_dir/AnycubicSlicer-${app_version}-x86_64.AppImage"
-latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"
+versioned_appimage="$work_dir/AnycubicSlicer-${app_version}${name_suffix}-x86_64.AppImage"
+latest_appimage="$work_dir/AnycubicSlicer${name_suffix}-x86_64.AppImage"
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" \
     -u "$update_information" "$app_dir" "$versioned_appimage"
 cp "$versioned_appimage" "$latest_appimage"

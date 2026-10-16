@@ -19,6 +19,22 @@ workarounds unless a tested replacement is available.
   `AnycubicSlicer-x86_64.AppImage`, and
   `AnycubicSlicer-x86_64.AppImage.zsync`.
 
+## Camview Variant
+
+- A manual workflow run can set `variant` to `camview` (the daily schedule always
+  builds `original`). It publishes a separate release tagged
+  `<debian-version>-camview`, created with `--latest=false --prerelease`, with
+  assets `AnycubicSlicer-<version>-camview-x86_64.AppImage`,
+  `AnycubicSlicer-camview-x86_64.AppImage` and its `.zsync`.
+- `appimage/build-latest.sh` reads `VARIANT` (default `original`). The original
+  variant's output must stay identical. The camview variant ships
+  `tools/cloud-camera/src/camview` in the AppDir, and `appimage/AppRun.camview`
+  becomes its `AppRun`: `AppRun camview ...` runs the tool with the host
+  `python3`, anything else goes to the unchanged `AppRun`, kept as `AppRun.slicer`.
+- The camview update string follows `latest-pre` (AppImageUpdate maps any other
+  value to one exact tag, which would pin the AppImage to its own release), so
+  camview releases must stay pre-releases and original releases must not be.
+
 ## Validation
 
 Run these checks after changing shell scripts or the workflow:

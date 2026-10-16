@@ -1,0 +1,21 @@
+#!/bin/bash
+# AppRun for the camview variant. "AppRun camview ..." runs the bundled camview
+# tool (tools/cloud-camera). Anything else goes to the regular AppRun, which the
+# build ships next to this file as AppRun.slicer, byte for byte.
+DIR=$(readlink -f "$0" | xargs dirname)
+
+if [ "${1:-}" = "camview" ]; then
+    shift
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "camview needs python3 (3.11 or newer) on the host." >&2
+        exit 1
+    fi
+    # camview starts the slicer again, so it needs this AppImage's own path.
+    export CAMVIEW_APPIMAGE="${CAMVIEW_APPIMAGE:-${APPIMAGE:-}}"
+    # The AppImage mount is read-only; do not try to write bytecode into it.
+    export PYTHONDONTWRITEBYTECODE=1
+    export PYTHONPATH="$DIR/camview${PYTHONPATH:+:$PYTHONPATH}"
+    exec python3 -c 'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' "$@"
+fi
+
+exec "$DIR/AppRun.slicer" "$@"

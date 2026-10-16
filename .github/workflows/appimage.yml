@@ -3,7 +3,16 @@ name: Build Anycubic Slicer AppImage
 on:
   schedule:
     - cron: '17 3 * * *'
+  # The schedule always builds the original variant (inputs are empty then).
   workflow_dispatch:
+    inputs:
+      variant:
+        description: 'original: the regular AppImage. camview: AppImage with the cloud-camera tool, released as <version>-camview.'
+        type: choice
+        options:
+          - original
+          - camview
+        default: original
 
 permissions:
   contents: read
@@ -17,6 +26,8 @@ jobs:
   check:
     outputs:
       app_version: ${{ steps.version.outputs.app_version }}
+      variant: ${{ steps.release.outputs.variant }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
       should_build: ${{ steps.release.outputs.should_build }}
     runs-on: ubuntu-24.04
     steps:
@@ -32,6 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ steps.version.outputs.app_version }}
+          VARIANT: ${{ inputs.variant || 'original' }}
         run: |
           if [[ -z "$APP_VERSION" ]]; then
             echo "No application version detected (upstream unavailable); skipping build."
@@ -39,17 +51,30 @@ jobs:
             exit 0
           fi
 
+          # The camview stream has its own tag and asset names, so it never
+          # touches the release (or the Latest badge) of the original stream.
+          release_tag="$APP_VERSION"
+          name_suffix=''
+          if [[ "$VARIANT" == camview ]]; then
+            release_tag="${APP_VERSION}-camview"
+            name_suffix='-camview'
+          fi
+          {
+            echo "variant=$VARIANT"
+            echo "release_tag=$release_tag"
+          } >> "$GITHUB_OUTPUT"
+
           required_assets=$(printf '%s\n' \
-            "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage" \
-            "AnycubicSlicer-x86_64.AppImage" \
-            "AnycubicSlicer-x86_64.AppImage.zsync")
+            "AnycubicSlicer-${APP_VERSION}${name_suffix}-x86_64.AppImage" \
+            "AnycubicSlicer${name_suffix}-x86_64.AppImage" \
+            "AnycubicSlicer${name_suffix}-x86_64.AppImage.zsync")
 
           view_status=0
-          assets=$(gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>"$RUNNER_TEMP/view-error.txt") || view_status=$?
+          assets=$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>"$RUNNER_TEMP/view-error.txt") || view_status=$?
           if (( view_status != 0 )); then
             # Only a missing release means "build"; any other API error fails the run.
             if grep -qi 'release not found' "$RUNNER_TEMP/view-error.txt"; then
-              echo "No release exists for $APP_VERSION."
+              echo "No release exists for $release_tag."
               echo 'should_build=true' >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -59,11 +84,11 @@ jobs:
 
           missing_assets=$(comm -23 <(printf '%s\n' "$required_assets" | sort) <(printf '%s\n' "$assets" | sort))
           if [[ -n "$missing_assets" ]]; then
-            echo "Release $APP_VERSION is incomplete; missing:"
+            echo "Release $release_tag is incomplete; missing:"
             printf '%s\n' "$missing_assets"
             echo 'should_build=true' >> "$GITHUB_OUTPUT"
           else
-            echo "Release $APP_VERSION is complete; skipping build."
+            echo "Release $release_tag is complete; skipping build."
             echo 'should_build=false' >> "$GITHUB_OUTPUT"
           fi
 
@@ -84,28 +109,41 @@ jobs:
         id: build
         env:
           EXPECTED_APP_VERSION: ${{ needs.check.outputs.app_version }}
+          VARIANT: ${{ needs.check.outputs.variant }}
         run: ./appimage/build-latest.sh
 
       - name: Publish release when the app version is new
         env:
           GH_TOKEN: ${{ github.token }}
-          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
+          VARIANT: ${{ needs.check.outputs.variant }}
           VERSIONED_APPIMAGE: ${{ steps.build.outputs.versioned_appimage }}
           LATEST_APPIMAGE: ${{ steps.build.outputs.latest_appimage }}
           ZSYNC: ${{ steps.build.outputs.zsync }}
         run: |
-          if gh release view "$APP_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$APP_VERSION" \
+          # Extra create flags for camview only. Pre-release keeps AppImageUpdate
+          # on the camview stream (its update string follows "latest-pre"), and
+          # --latest=false means it can never take the Latest badge.
+          create_args=()
+          notes="Anycubic Slicer Next as AppImage. The AppImage includes AppImageUpdate metadata."
+          if [[ "$VARIANT" == camview ]]; then
+            create_args=(--latest=false --prerelease)
+            notes="Anycubic Slicer Next as AppImage with the camview cloud camera tool (run it with: <AppImage> camview run). Separate from the regular releases. The AppImage includes AppImageUpdate metadata and updates only from camview releases."
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber \
               "$VERSIONED_APPIMAGE" \
               "$LATEST_APPIMAGE" \
               "$ZSYNC"
           else
-            gh release create "$APP_VERSION" \
+            gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "$APP_VERSION" \
-              --notes "Anycubic Slicer Next as AppImage. The AppImage includes AppImageUpdate metadata." \
+              --title "$RELEASE_TAG" \
+              --notes "$notes" \
+              "${create_args[@]}" \
               "$VERSIONED_APPIMAGE" \
               "$LATEST_APPIMAGE" \
               "$ZSYNC"
