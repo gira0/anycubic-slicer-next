@@ -45,6 +45,17 @@ package_field() {
     '
 }
 
+# Print a Debian version without its epoch ("1:2.0.0.6" -> "2.0.0.6"). Anycubic
+# added epoch 1 when it renumbered 2.0.06 as 2.0.0.6; the epoch only orders
+# packages for apt, and ":" is not allowed in a Git tag.
+strip_epoch() {
+    if [[ "$1" =~ ^[0-9]+:(.*)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 # The version becomes a release tag, a file name and a workflow output, so
 # reject anything that is not a plain version string or not a valid Git tag
 # (Git refuses "~", "..", and a trailing "." or ".lock").
@@ -53,4 +64,17 @@ validate_version() {
         echo "Refusing unexpected upstream version string: $1" >&2
         exit 1
     fi
+}
+
+# Print the packaging revision from appimage/PACKAGE_REVISION. Release tags are
+# "<version>-<revision>", so bumping it ships packaging changes for an upstream
+# version that is already released.
+package_revision() {
+    local revision
+    revision=$(tr -d '[:space:]' < "$1/PACKAGE_REVISION")
+    if [[ ! "$revision" =~ ^[1-9][0-9]*$ ]]; then
+        echo "PACKAGE_REVISION must be a positive integer, got: '$revision'" >&2
+        exit 1
+    fi
+    printf '%s\n' "$revision"
 }

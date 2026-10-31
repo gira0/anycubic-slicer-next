@@ -38,7 +38,7 @@ if ! sha256sum --check --quiet <<< "$deb_sha256  $deb_path"; then
     echo "Downloaded package does not match the SHA256 in the APT index" >&2
     exit 1
 fi
-app_version=$(dpkg-deb -f "$deb_path" Version)
+app_version=$(strip_epoch "$(dpkg-deb -f "$deb_path" Version)")
 if [[ -z "$app_version" ]]; then
     echo "Could not determine the application version from $deb_path" >&2
     exit 1
@@ -50,6 +50,8 @@ if [[ -n "${EXPECTED_APP_VERSION:-}" && "$app_version" != "$EXPECTED_APP_VERSION
     echo "Upstream changed from $EXPECTED_APP_VERSION to $app_version since the check; the next run picks it up" >&2
     exit 1
 fi
+# Upstream version plus packaging revision, for example 2.0.06-1.
+release_version="$app_version-$(package_revision "$script_dir")"
 
 mkdir -p "$work_dir/extracted"
 cd "$work_dir/extracted"
@@ -84,9 +86,15 @@ cp "$source_desktop_file" "$desktop_file"
 sed -i 's|^Icon=.*|Icon=AnycubicSlicer|' "$desktop_file"
 
 icon_file="$app_dir/share/AnycubicSlicerNext/resources/images/AnycubicSlicer.png"
-if [[ -f "$icon_file" ]]; then
-    cp "$icon_file" "$app_dir/AnycubicSlicer.png"
+if [[ ! -f "$icon_file" ]]; then
+    echo "Expected icon file was not found: $icon_file" >&2
+    exit 1
 fi
+cp "$icon_file" "$app_dir/AnycubicSlicer.png"
+# Ship .DirIcon as a regular file. appimagetool otherwise creates a symlink, and
+# integrators such as Gear Lever extract only .DirIcon, get a dangling link and
+# install no icon, so the taskbar shows none.
+cp "$icon_file" "$app_dir/.DirIcon"
 
 # appimagetool embeds this in the runtime's .upd_info section, which is where
 # AppImageUpdate reads it. A key in the .desktop file is not used.
@@ -112,7 +120,7 @@ if ! sha256sum --check --quiet <<< "$appimage_tool_sha256  $appimage_tool"; then
 fi
 chmod +x "$appimage_tool"
 
-versioned_appimage="$work_dir/AnycubicSlicer-${app_version}${name_suffix}-x86_64.AppImage"
+versioned_appimage="$work_dir/AnycubicSlicer-${release_version}${name_suffix}-x86_64.AppImage"
 latest_appimage="$work_dir/AnycubicSlicer${name_suffix}-x86_64.AppImage"
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" \
     -u "$update_information" "$app_dir" "$versioned_appimage"
@@ -124,10 +132,11 @@ zsyncmake -u "$(basename -- "$latest_appimage")" -o "$latest_appimage.zsync" "$l
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
         printf 'app_version=%s\n' "$app_version"
+        printf 'release_version=%s\n' "$release_version"
         printf 'versioned_appimage=%s\n' "$versioned_appimage"
         printf 'latest_appimage=%s\n' "$latest_appimage"
         printf 'zsync=%s\n' "$latest_appimage.zsync"
     } >> "$GITHUB_OUTPUT"
 fi
 
-printf '%s\n' "$app_version"
+printf '%s\n' "$release_version"
