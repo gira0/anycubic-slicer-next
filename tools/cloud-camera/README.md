@@ -10,7 +10,8 @@ modifying any vendor binary:
    session returned by `sendOrder` to a local helper.
 2. It starts the slicer with `ACNEXT_WORKBENCH_ENV_VAR` pointing at the patched copy
    (the slicer provides login and signed API requests).
-3. The helper opens a small viewer in a Chromium-family browser, which joins the
+3. The helper opens a small viewer in a browser (Chromium family preferred, Firefox
+   as a fallback), which joins the
    Agora channel with the Agora Web SDK (same version and settings as the slicer).
 
 ## Usage
@@ -23,8 +24,9 @@ uv run camview run --appimage ~/AppImages/anycubicslicer.appimage
 Open the Workbench, select a **cloud** printer and press play **once**. A viewer window
 opens. (Pressing play repeatedly makes overlapping joins fail with `UID_CONFLICT`.)
 
-Requirements: `uv`, a Chromium-family browser (the Flatpak `org.chromium.Chromium`,
-`chromium`, `google-chrome` or `brave-browser`; or set `CAMVIEW_BROWSER`), network
+Requirements: `uv`, a browser (tried in this order: the Flatpak `org.chromium.Chromium`,
+`chromium`, `google-chrome`, `brave-browser`, the Flatpak `org.mozilla.firefox`,
+`firefox`; or set `CAMVIEW_BROWSER`), network
 access to download the Agora Web SDK once (cached in `~/.cache/camview`, SHA-256
 verified).
 

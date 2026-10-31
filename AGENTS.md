@@ -38,6 +38,11 @@ workarounds unless a tested replacement is available.
   `tools/cloud-camera/src/camview` in the AppDir, and `appimage/AppRun.camview`
   becomes its `AppRun`: `AppRun camview ...` runs the tool with the host
   `python3`, anything else goes to the unchanged `AppRun`, kept as `AppRun.slicer`.
+- The camview build runs `camview prepare` against the new `libWorkbench.so` and
+  fails if the web UI patch no longer applies, so a broken camview AppImage is
+  never published. The original variant is unaffected (separate matrix job).
+- An earlier design that started camview automatically as an `AppRun` sidecar in
+  the regular AppImage is kept as the tag `archive/appimage-cloud-camera`.
 - The camview update string follows `latest-pre` (AppImageUpdate maps any other
   value to one exact tag, which would pin the AppImage to its own release), so
   camview releases must stay pre-releases and original releases must not be.
@@ -74,5 +79,5 @@ plus `-camview` for that stream) that already has all required assets.
   revisit it. Read it before attempting any video-related change, and do not
   modify `libWorkbench.so`. Keep `*.apk` files out of git.
 - `tools/cloud-camera/`: `camview`, a `uv` prototype that shows cloud printer
-  cameras on Linux through a patched Workbench copy and a Chromium viewer window
+  cameras on Linux through a patched Workbench copy and a browser viewer window
   (see its README). Run it with `uv run camview run --appimage PATH`.
