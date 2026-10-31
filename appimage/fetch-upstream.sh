@@ -71,7 +71,9 @@ validate_version() {
 # version that is already released.
 package_revision() {
     local revision
-    revision=$(tr -d '[:space:]' < "$1/PACKAGE_REVISION")
+    # Only the trailing newline goes (command substitution drops it), so a
+    # malformed value such as "1 2" fails the check instead of becoming 12.
+    revision=$(< "$1/PACKAGE_REVISION")
     if [[ ! "$revision" =~ ^[1-9][0-9]*$ ]]; then
         echo "PACKAGE_REVISION must be a positive integer, got: '$revision'" >&2
         exit 1

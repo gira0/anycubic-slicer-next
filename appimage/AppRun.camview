@@ -2,11 +2,11 @@
 # AppRun for the camview variant. "AppRun camview ..." runs the bundled camview
 # tool (tools/cloud-camera). Anything else goes to the regular AppRun, which the
 # build ships next to this file as AppRun.slicer, byte for byte.
-DIR=$(readlink -f "$0" | xargs dirname)
+DIR=$(dirname -- "$(readlink -f -- "$0")")
 
 if [ "${1:-}" = "camview" ]; then
     shift
-    if ! command -v python3 >/dev/null 2>&1; then
+    if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1; then
         echo "camview needs python3 (3.11 or newer) on the host." >&2
         exit 1
     fi

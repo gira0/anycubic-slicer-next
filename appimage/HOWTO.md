@@ -82,8 +82,10 @@ release tag and AppImage filename (`2.0.0.6-1`).
 ### Step 1: Set up workspace
 
 ```bash
-# Use the Debian package version (see "Checking for New Versions")
-APP_VERSION="2.0.06"
+# Use the Debian package version without its epoch (see "Checking for New Versions")
+APP_VERSION="2.0.0.6"
+# Append the packaging revision from appimage/PACKAGE_REVISION
+RELEASE_VERSION="${APP_VERSION}-1"
 
 mkdir -p "Anycubic-Appimage ${APP_VERSION}/ubuntu-24-deb-file"
 cd "Anycubic-Appimage ${APP_VERSION}"
@@ -139,7 +141,7 @@ sed -i 's|Icon=.*|Icon=AnycubicSlicer|' AnycubicSlicer.AppDir/AnycubicSlicer.des
 ```bash
 cat > AnycubicSlicer.AppDir/AppRun <<'EOF'
 #!/bin/bash
-DIR=$(readlink -f "$0" | xargs dirname)
+DIR=$(dirname -- "$(readlink -f -- "$0")")
 
 export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin:$LD_LIBRARY_PATH"
 
@@ -192,16 +194,16 @@ chmod +x appimagetool
 ### Step 8: Build the AppImage
 
 ```bash
-ARCH=x86_64 ./appimagetool AnycubicSlicer.AppDir "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+ARCH=x86_64 ./appimagetool AnycubicSlicer.AppDir "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 ```
 
 ### Step 9: Test the AppImage
 
 ```bash
-chmod +x "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+chmod +x "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 
 # Run it from the command line to view logs
-./"AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+./"AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 ```
 
 You should see output like:
@@ -218,7 +220,6 @@ If fonts return 1, everything is working correctly!
 ### Step 10: Create GitHub Release
 
 ```bash
-RELEASE_VERSION="${APP_VERSION}-$(cat appimage/PACKAGE_REVISION)"
 gh release create "${RELEASE_VERSION}" \
   --repo gira0/anycubic-slicer-next \
   --title "${RELEASE_VERSION}" \
