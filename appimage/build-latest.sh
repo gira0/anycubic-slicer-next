@@ -68,6 +68,16 @@ if [[ "$variant" == camview ]]; then
     # The tool is pure standard library Python; the host provides python3.
     mkdir -p "$app_dir/camview"
     cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/camview/camview"
+    # camview patches the Workbench web UI on the user's machine. Check here that
+    # the patch still applies to this upstream version, so a broken camview
+    # AppImage is never published (the original variant is built separately).
+    if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/camview" python3 -P -s -c \
+            'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' \
+            prepare --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check" >/dev/null; then
+        echo "::error title=camview patch::The camview web UI patch does not apply to $app_version; fix tools/cloud-camera/src/camview/patch.py" >&2
+        exit 1
+    fi
+    rm -rf "$work_dir/camview-check"
     find "$app_dir/camview" -name __pycache__ -type d -prune -exec rm -rf {} +
 else
     cp "$script_dir/AppRun" "$app_dir/AppRun"

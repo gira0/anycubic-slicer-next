@@ -1,6 +1,8 @@
 """Fetch and cache the Agora Web SDK (the version the slicer bundles)."""
 import hashlib
 import os
+import tempfile
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,20 +21,46 @@ def cache_dir() -> Path:
     return Path(base) / "camview"
 
 
-def ensure_sdk() -> Path:
-    """Return the path of the verified SDK, downloading it on first use."""
-    path = cache_dir() / f"AgoraRTC_N-{VERSION}.js"
-    if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == SHA256:
-        return path
-    print(f"Downloading Agora Web SDK {VERSION} ...")
+_download_lock = threading.Lock()
+
+
+def _valid(path: Path) -> bool:
     try:
-        with urllib.request.urlopen(URL, timeout=60) as resp:
-            data = resp.read()
-    except (urllib.error.URLError, OSError) as e:
-        raise SdkError(f"could not download the Agora Web SDK from {URL}: {e}") from e
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != SHA256:
-        raise SdkError(f"Agora SDK checksum mismatch: got {digest}, expected {SHA256}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return path
+        return hashlib.sha256(path.read_bytes()).hexdigest() == SHA256
+    except OSError:
+        return False
+
+
+def ensure_sdk() -> Path:
+    """Return the path of the verified SDK, downloading it on first use.
+
+    Downloads are serialized in this process and published with an atomic
+    rename, so no caller (here or in another camview process) ever reads a
+    partially written file.
+    """
+    path = cache_dir() / f"AgoraRTC_N-{VERSION}.js"
+    with _download_lock:
+        if _valid(path):
+            return path
+        print(f"Downloading Agora Web SDK {VERSION} ...")
+        try:
+            with urllib.request.urlopen(URL, timeout=60) as resp:
+                data = resp.read()
+        except (urllib.error.URLError, OSError) as e:
+            raise SdkError(f"could not download the Agora Web SDK from {URL}: {e}") from e
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != SHA256:
+            raise SdkError(f"Agora SDK checksum mismatch: got {digest}, expected {SHA256}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".sdk-", suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        return path
