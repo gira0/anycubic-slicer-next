@@ -6,7 +6,7 @@ DIR=$(dirname -- "$(readlink -f -- "$0")")
 
 if [ "${1:-}" = "camview" ]; then
     shift
-    if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1; then
+    if ! python3 -P -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1; then
         echo "camview needs python3 (3.11 or newer) on the host." >&2
         exit 1
     fi
@@ -15,7 +15,7 @@ if [ "${1:-}" = "camview" ]; then
     # The AppImage mount is read-only; do not try to write bytecode into it.
     export PYTHONDONTWRITEBYTECODE=1
     export PYTHONPATH="$DIR/camview${PYTHONPATH:+:$PYTHONPATH}"
-    exec python3 -c 'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' "$@"
+    exec python3 -P -c 'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' "$@"
 fi
 
 exec "$DIR/AppRun.slicer" "$@"
