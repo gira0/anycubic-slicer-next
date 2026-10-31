@@ -35,7 +35,7 @@ The AppImage requires a modern Linux distribution with glibc 2.38+ and GLib 2.76
 
 ## Checking for New Versions
 
-Anycubic publishes .deb packages to their APT repository. Releases are tagged with the Debian package `Version` (for example `2.0.06`). Releases up to `1.3.9.4` used the application version read from the binary instead, but current binaries no longer contain that string. Follow these steps to check for updates:
+Anycubic publishes .deb packages to their APT repository. Releases are tagged `<Version>-<revision>`: the Debian package `Version` without its epoch, plus the packaging revision from `appimage/PACKAGE_REVISION` (for example `2.0.0.6-1`). Releases `2.0.06` and earlier had no revision. Releases up to `1.3.9.4` used the application version read from the binary instead, but current binaries no longer contain that string. Follow these steps to check for updates:
 
 ### Step 1: Check the APT Packages file
 
@@ -56,7 +56,7 @@ SHA256: <checksum of the .deb>
 **Important notes:**
 - The `Filename` field contains the actual download path — it is NOT predictable from the version number alone
 - The filename may have a `develop_` prefix — this does NOT necessarily mean it's unstable
-- The `Version` field is the version used for the release tag and AppImage filename
+- The `Version` field, without an epoch such as `1:`, is the version used for the release tag and AppImage filename
 - The `SHA256` field is the checksum of the .deb; verify the download against it
 
 ### Step 2: Download the .deb using the Filename from the Packages file
@@ -73,16 +73,19 @@ curl -L -o anycubicslicernext.deb \
 dpkg-deb -f anycubicslicernext.deb Version
 ```
 
-That is the version to use for the AppImage filename and GitHub release. It is
-the same value as the `Version` field in the Packages file.
+It is the same value as the `Version` field in the Packages file. Drop a leading
+epoch (`1:2.0.0.6` becomes `2.0.0.6`) and append the packaging revision to get the
+release tag and AppImage filename (`2.0.0.6-1`).
 
 ## Build Process
 
 ### Step 1: Set up workspace
 
 ```bash
-# Use the Debian package version (see "Checking for New Versions")
-APP_VERSION="2.0.06"
+# Use the Debian package version without its epoch (see "Checking for New Versions")
+APP_VERSION="2.0.0.6"
+# Append the packaging revision from appimage/PACKAGE_REVISION
+RELEASE_VERSION="${APP_VERSION}-1"
 
 mkdir -p "Anycubic-Appimage ${APP_VERSION}/ubuntu-24-deb-file"
 cd "Anycubic-Appimage ${APP_VERSION}"
@@ -138,7 +141,7 @@ sed -i 's|Icon=.*|Icon=AnycubicSlicer|' AnycubicSlicer.AppDir/AnycubicSlicer.des
 ```bash
 cat > AnycubicSlicer.AppDir/AppRun <<'EOF'
 #!/bin/bash
-DIR=$(readlink -f "$0" | xargs dirname)
+DIR=$(dirname -- "$(readlink -f -- "$0")")
 
 export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin:$LD_LIBRARY_PATH"
 
@@ -191,16 +194,16 @@ chmod +x appimagetool
 ### Step 8: Build the AppImage
 
 ```bash
-ARCH=x86_64 ./appimagetool AnycubicSlicer.AppDir "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+ARCH=x86_64 ./appimagetool AnycubicSlicer.AppDir "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 ```
 
 ### Step 9: Test the AppImage
 
 ```bash
-chmod +x "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+chmod +x "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 
 # Run it from the command line to view logs
-./"AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+./"AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 ```
 
 You should see output like:
@@ -217,11 +220,11 @@ If fonts return 1, everything is working correctly!
 ### Step 10: Create GitHub Release
 
 ```bash
-gh release create "${APP_VERSION}" \
+gh release create "${RELEASE_VERSION}" \
   --repo gira0/anycubic-slicer-next \
-  --title "${APP_VERSION}" \
-  --notes "Anycubic Slicer Next as AppImage." \
-  "AnycubicSlicer-${APP_VERSION}-x86_64.AppImage"
+  --title "${RELEASE_VERSION}" \
+  --notes "Anycubic Slicer Next ${APP_VERSION} as AppImage." \
+  "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage"
 ```
 
 ## Version History
@@ -238,6 +241,8 @@ gh release create "${APP_VERSION}" \
 Anycubic's deb `Version` can differ from the version the application shows about itself.
 
 Older releases (up to `1.3.9.4`) were tagged with the app version found by running `strings` on the binary. Current binaries no longer contain that string, so releases from `2.0.06` on are tagged with the deb `Version`, which is what `appimage/check-latest.sh` reports.
+
+Anycubic renumbered `2.0.06` as `2.0.0.6` and added the Debian epoch `1:` so apt still sees it as newer. The epoch is not part of release tags (Git does not allow `:` in a tag), and from `2.0.0.6` on tags carry the packaging revision.
 
 ### Directory Structure
 
@@ -348,9 +353,14 @@ undefined symbol: g_once_init_leave_pointer
 Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
-- **Tag/Title**: The deb package version (e.g. `2.0.06`)
-- **Notes**: `Anycubic Slicer Next as AppImage. The AppImage includes AppImageUpdate metadata.`
-- **Asset**: `AnycubicSlicer-<VERSION>-x86_64.AppImage`
+- **Tag/Title**: The deb package version without epoch, plus the packaging
+  revision (e.g. `2.0.0.6-1`). The camview stream appends `-camview`
+  (e.g. `2.0.0.6-1-camview`) and is published as a pre-release.
+- **Notes**: `Anycubic Slicer Next <VERSION> as AppImage (packaging revision <N>). The AppImage includes AppImageUpdate metadata.`
+- **Assets**: `AnycubicSlicer-<VERSION>-<N>-x86_64.AppImage`, the stable
+  `AnycubicSlicer-x86_64.AppImage` and its `.zsync` (camview:
+  `AnycubicSlicer-<VERSION>-<N>-camview-x86_64.AppImage`,
+  `AnycubicSlicer-camview-x86_64.AppImage` and its `.zsync`)
 
 ## Credits
 

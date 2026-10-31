@@ -21,14 +21,15 @@ fi
 
 # The Packages stanza carries the same Version as the .deb control file, so the
 # check does not need to download the package.
-app_version=$(package_field Version <<< "$packages")
+app_version=$(strip_epoch "$(package_field Version <<< "$packages")")
 if [[ -z "$app_version" ]]; then
     echo "Could not find the anycubicslicernext version in the APT index" >&2
     exit 1
 fi
 validate_version "$app_version"
+release_version="$app_version-$(package_revision "$script_dir")"
 
-printf 'app_version=%s\n' "$app_version"
+printf 'app_version=%s\nrelease_version=%s\n' "$app_version" "$release_version"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf 'app_version=%s\n' "$app_version" >> "$GITHUB_OUTPUT"
+    printf 'app_version=%s\nrelease_version=%s\n' "$app_version" "$release_version" >> "$GITHUB_OUTPUT"
 fi

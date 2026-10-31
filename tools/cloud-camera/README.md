@@ -31,6 +31,17 @@ verified).
 `uv run camview prepare --appimage PATH OUT_DIR` writes the patched web UI to a
 directory for inspection.
 
+### Inside the camview AppImage
+
+The `-camview` AppImage releases ship this tool (without `uv`). Run it with the host
+`python3` (3.11 or newer) and no `--appimage` argument:
+
+```bash
+./AnycubicSlicer-camview-x86_64.AppImage camview run
+```
+
+Any other arguments start the slicer as usual.
+
 ## Security notes
 
 - The helper listens on `127.0.0.1` only; every request needs a random per-run token,
