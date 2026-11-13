@@ -69,6 +69,6 @@ Any other arguments start the slicer as usual.
   Firefox may only play with its OpenH264 plugin enabled (`about:addons`, Plugins).
   Firefox also keeps the viewer URL in its history and session restore; its one-time
   ticket is used up by then, so a restored tab shows 403.
-- The viewer window closes itself when the slicer exits (Firefox does not allow that;
-  the window then says so). If the helper is unreachable for another reason, the
+- The viewer window closes itself when the slicer exits (tested with the Chromium
+  and Firefox Flatpaks; a browser that refuses says so in the window). If the helper is unreachable for another reason, the
   viewer keeps retrying and leaves the channel after about a minute.
