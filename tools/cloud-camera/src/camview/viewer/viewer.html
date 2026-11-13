@@ -26,8 +26,11 @@
 <script>
 const token = '__CAMVIEW_TOKEN__';  // filled in by the helper
 const $ = (id) => document.getElementById(id);
-const setStatus = (t) => { $('status').textContent = t; document.title = 'Anycubic camera - ' + t; };
+const setStatus = (t) => { $('status').textContent = t; $('status').title = t; document.title = 'Anycubic camera - ' + t; };
 let seq = 0, client = null, audioTrack = null, publishTimer = null;
+// The stream is H.264. Firefox-based browsers may need the OpenH264 plugin for it.
+const GECKO_HINT = navigator.userAgent.includes('Gecko/')
+  ? ' In Firefox, also check that the OpenH264 plugin is enabled (about:addons, Plugins).' : '';
 
 function b64ToBytes(b64) {
   const raw = atob(b64), out = new Uint8Array(raw.length);
@@ -66,31 +69,51 @@ async function join(session) {
   }
   await c.join(sw.appid, sw.channel, sw.rtc_token || null, sw.client_uid || null);
   setStatus('Joined, waiting for the printer camera…');
-  publishTimer = setTimeout(() => setStatus('Joined, but the printer is not publishing video (is the camera on?)'), 20000);
+  publishTimer = setTimeout(() => setStatus('Joined, but the printer is not publishing video (is the camera on?)' + GECKO_HINT), 20000);
 }
 
-let failures = 0;
+// A failed poll does not mean the slicer was closed: a suspend/resume or a network
+// change aborts even loopback requests for a while. Only the helper's "closed"
+// notice ends polling. After GIVE_UP_AFTER failed polls in a row (about a minute)
+// the channel is left, but polling goes on slowly and recovers.
+const POLL_MS = 1500, SLOW_POLL_MS = 5000, WARN_AFTER = 3, GIVE_UP_AFTER = 40;
+let failures = 0, savedStatus = null, gaveUp = false;
 async function poll() {
+  let delay = POLL_MS;
   try {
     const r = await fetch('/session?t=' + encodeURIComponent(token) + '&since=' + seq, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     failures = 0;
-    if (j.seq !== seq) {
-      seq = j.seq;
-      if (j.session) await join(j.session).catch((e) => setStatus('Error: ' + (e.code || '') + ' ' + (e.message || e)));
-    }
-  } catch (e) {
-    // The helper exits together with the slicer: leave the channel and stop
-    // polling instead of retrying forever.
-    if (++failures >= 3) {
+    if (j.closed) {
       await leave();
       setStatus('The slicer was closed. You can close this window.');
       window.close();  // only allowed in some browsers; harmless otherwise
       return;
     }
-    setStatus('Lost connection to the helper');
+    if (savedStatus !== null) { setStatus(savedStatus); savedStatus = null; }
+    if (gaveUp) {
+      gaveUp = false; seq = -1;  // the channel was left: take the helper's session again
+      setStatus('Reconnected to the helper. Press play in the slicer to restart the video.');
+    }
+    if (j.seq !== seq) {
+      seq = j.seq;
+      if (j.session) await join(j.session).catch((e) => setStatus('Error: ' + (e.code || '') + ' ' + (e.message || e)));
+    }
+  } catch (e) {
+    failures++;
+    if (failures === WARN_AFTER) {
+      savedStatus = $('status').textContent;
+      setStatus('Lost connection to the helper, retrying…');
+    }
+    if (failures === GIVE_UP_AFTER) {
+      await leave();
+      gaveUp = true; savedStatus = null;
+      setStatus('No connection to the helper, still retrying. If the slicer was closed, close this window.');
+    }
+    if (gaveUp) delay = SLOW_POLL_MS;
   }
-  setTimeout(poll, 1500);
+  setTimeout(poll, delay);
 }
 
 $('unmute').onclick = () => { if (audioTrack) { audioTrack.play(); $('unmute').hidden = true; } };

@@ -71,10 +71,17 @@ if [[ "$variant" == camview ]]; then
     # camview patches the Workbench web UI on the user's machine. Check here that
     # the patch still applies to this upstream version, so a broken camview
     # AppImage is never published (the original variant is built separately).
-    if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/camview" python3 -P -s -c \
-            'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' \
-            prepare --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check" >/dev/null; then
+    camview_status=0
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/camview" python3 -P -s -c \
+        'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' \
+        prepare --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check" >/dev/null || camview_status=$?
+    # 3 is camview's exit status for a patch that does not apply (EXIT_PATCH_FAILED
+    # in cli.py). Anything else failed before or after the patch step.
+    if (( camview_status == 3 )); then
         echo "::error title=camview patch::The camview web UI patch does not apply to $app_version; fix tools/cloud-camera/src/camview/patch.py" >&2
+        exit 1
+    elif (( camview_status != 0 )); then
+        echo "::error title=camview check::'camview prepare' failed with status $camview_status before it could check the web UI patch (python3 3.11 or newer missing, import error, or no lib/libWorkbench.so in the package?); see the log above" >&2
         exit 1
     fi
     rm -rf "$work_dir/camview-check"

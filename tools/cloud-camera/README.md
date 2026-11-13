@@ -10,9 +10,10 @@ modifying any vendor binary:
    session returned by `sendOrder` to a local helper.
 2. It starts the slicer with `ACNEXT_WORKBENCH_ENV_VAR` pointing at the patched copy
    (the slicer provides login and signed API requests).
-3. The helper opens a small viewer in a browser (Chromium family preferred, Firefox
-   as a fallback), which joins the
-   Agora channel with the Agora Web SDK (same version and settings as the slicer).
+3. The helper opens a viewer in a browser (Chromium family preferred, as a small
+   app-style window; Firefox as a fallback, as an ordinary browser window), which
+   joins the Agora channel with the Agora Web SDK (same version and settings as the
+   slicer).
 
 ## Usage
 
@@ -26,7 +27,9 @@ opens. (Pressing play repeatedly makes overlapping joins fail with `UID_CONFLICT
 
 Requirements: `uv`, a browser (tried in this order: the Flatpak `org.chromium.Chromium`,
 `chromium`, `google-chrome`, `brave-browser`, the Flatpak `org.mozilla.firefox`,
-`firefox`; or set `CAMVIEW_BROWSER`), network
+`firefox`; or set `CAMVIEW_BROWSER` to a command, where Firefox-based browsers are
+recognised by the executable name or Flatpak app id: `firefox*`, `librewolf`, `zen`,
+`waterfox`, `floorp`, `icecat`; everything else gets Chromium arguments), network
 access to download the Agora Web SDK once (cached in `~/.cache/camview`, SHA-256
 verified).
 
@@ -62,4 +65,10 @@ Any other arguments start the slicer as usual.
   viewer window.
 - It depends on undocumented behaviour and breaks if Anycubic changes the web UI;
   patch failures abort with a clear message instead of running a half-patched UI.
-- Agora encryption in the browser is untested on Firefox.
+- Agora encryption in the browser is untested on Firefox. The stream is H.264, which
+  Firefox may only play with its OpenH264 plugin enabled (`about:addons`, Plugins).
+  Firefox also keeps the viewer URL in its history and session restore; its one-time
+  ticket is used up by then, so a restored tab shows 403.
+- The viewer window closes itself when the slicer exits (Firefox does not allow that;
+  the window then says so). If the helper is unreachable for another reason, the
+  viewer keeps retrying and leaves the channel after about a minute.
