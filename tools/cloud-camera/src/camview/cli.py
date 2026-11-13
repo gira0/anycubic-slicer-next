@@ -10,6 +10,15 @@ from pathlib import Path
 
 from . import patch, sdk, server
 
+# Exit status for a web UI patch that does not apply. appimage/build-latest.sh
+# uses it to tell that apart from every other failure (1, or 2 from argparse).
+EXIT_PATCH_FAILED = 3
+
+
+def _patch_failed(e: patch.PatchError) -> int:
+    print(f"camview: {e}", file=sys.stderr)
+    return EXIT_PATCH_FAILED
+
 
 def _find_lib(args, workdir: Path) -> Path:
     if args.lib:
@@ -42,9 +51,11 @@ def cmd_prepare(args) -> int:
     with tempfile.TemporaryDirectory(prefix="camview-") as tmp:
         try:
             root = _prepare(args, Path(tmp), "http://127.0.0.1:0", "TOKEN")
+            shutil.copytree(root, out, dirs_exist_ok=True)
         except patch.PatchError as e:
+            return _patch_failed(e)
+        except OSError as e:  # unreadable libWorkbench.so, unwritable output directory
             sys.exit(f"camview: {e}")
-        shutil.copytree(root, out, dirs_exist_ok=True)
     print(f"Patched web UI written to {out}")
     return 0
 
@@ -58,20 +69,22 @@ def cmd_run(args) -> int:
     except sdk.SdkError as e:
         sys.exit(f"camview: {e}")
     token = secrets.token_urlsafe(24)
-    httpd, state = server.start_server(token, sdk_path)
+    browser = server.find_browser()  # once: it cannot change during a run
+    httpd, state = server.start_server(token, sdk_path, browser)
     helper_url = f"http://127.0.0.1:{state.port}"
     with tempfile.TemporaryDirectory(prefix="camview-") as tmp:
         try:
             root = _prepare(args, Path(tmp), helper_url, token)
         except patch.PatchError as e:
-            sys.exit(f"camview: {e}")
+            return _patch_failed(e)
         env = dict(os.environ, ACNEXT_WORKBENCH_ENV_VAR=(root / "index.html").as_uri())
-        if server.find_browser_command() is None:
-            print("camview: warning: no Chromium-family browser found; set CAMVIEW_BROWSER")
+        if browser is None:
+            print("camview: warning: no supported browser (Chromium family or Firefox) found; set CAMVIEW_BROWSER")
         print("camview: starting the slicer with the patched Workbench")
         try:
             return subprocess.call([str(appimage.resolve()), *args.slicer_args], env=env)
         finally:
+            state.close()  # lets an open viewer know that the slicer is gone
             httpd.shutdown()
 
 
