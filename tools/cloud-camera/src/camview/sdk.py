@@ -49,7 +49,10 @@ def ensure_sdk() -> Path:
     path = cache_dir() / f"AgoraRTC_N-{VERSION}.js"
     if _valid(path):
         return path
-    print(f"Downloading Agora Web SDK {VERSION} ...")
+    try:
+        print(f"Downloading Agora Web SDK {VERSION} ...", flush=True)
+    except (OSError, ValueError):  # nobody listening; the download still matters
+        pass
     try:
         with urllib.request.urlopen(URL, timeout=60) as resp:
             data = resp.read()

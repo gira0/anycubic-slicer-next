@@ -6,17 +6,6 @@ packages_url="$apt_base_url/dists/noble/main/binary-amd64/Packages"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=appimage/fetch-upstream.sh
 source "$script_dir/fetch-upstream.sh"
-# "original" is the unmodified AppImage. "camview" additionally ships the
-# tools/cloud-camera helper and is published as its own release stream.
-variant="${VARIANT:-original}"
-case "$variant" in
-    original) name_suffix='' ;;
-    camview) name_suffix='-camview' ;;
-    *)
-        echo "Unknown VARIANT '$variant'; expected 'original' or 'camview'" >&2
-        exit 1
-        ;;
-esac
 work_dir="${RUNNER_TEMP:-/tmp}/anycubic-slicer-build"
 deb_path="$work_dir/anycubicslicernext.deb"
 app_dir="$work_dir/AnycubicSlicer.AppDir"
@@ -59,36 +48,33 @@ ar x "$deb_path"
 tar -xf data.tar.*
 cp -a usr/. "$app_dir/"
 
-if [[ "$variant" == camview ]]; then
-    # AppRun.camview forwards everything except the "camview" subcommand to the
-    # unchanged AppRun, which stays next to it under another name.
-    cp "$script_dir/AppRun" "$app_dir/AppRun.slicer"
-    cp "$script_dir/AppRun.camview" "$app_dir/AppRun"
-    chmod +x "$app_dir/AppRun.slicer"
-    # The tool is pure standard library Python; the host provides python3.
-    mkdir -p "$app_dir/camview"
-    cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/camview/camview"
-    # camview patches the Workbench web UI on the user's machine. Check here that
-    # the patch still applies to this upstream version, so a broken camview
-    # AppImage is never published (the original variant is built separately).
-    camview_status=0
-    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/camview" python3 -P -s -c \
-        'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' \
-        prepare --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check" >/dev/null || camview_status=$?
-    # 3 is camview's exit status for a patch that does not apply (EXIT_PATCH_FAILED
-    # in cli.py). Anything else failed before or after the patch step.
-    if (( camview_status == 3 )); then
-        echo "::error title=camview patch::The camview web UI patch does not apply to $app_version; fix tools/cloud-camera/src/camview/patch.py" >&2
-        exit 1
-    elif (( camview_status != 0 )); then
-        echo "::error title=camview check::'camview prepare' failed with status $camview_status before it could check the web UI patch (python3 3.11 or newer missing, import error, or no lib/libWorkbench.so in the package?); see the log above" >&2
-        exit 1
-    fi
-    rm -rf "$work_dir/camview-check"
-    find "$app_dir/camview" -name __pycache__ -type d -prune -exec rm -rf {} +
-else
-    cp "$script_dir/AppRun" "$app_dir/AppRun"
+cp "$script_dir/AppRun" "$app_dir/AppRun"
+# The camview cloud camera helper (tools/cloud-camera). AppRun starts it next to
+# the slicer. It is pure standard library Python; the host provides python3.
+mkdir -p "$app_dir/camview"
+cp -a "$script_dir/../tools/cloud-camera/src/camview" "$app_dir/camview/camview"
+# camview patches the Workbench web UI on the user's machine. Check here whether
+# the patch still applies to this upstream version. If it does not, the AppImage
+# is still good: the helper notices the same thing at start and the slicer runs
+# without the cloud camera. So this warns and lets the release notes say so,
+# instead of holding back a new slicer version.
+camview_patch=ok
+camview_status=0
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$app_dir/camview" python3 -P -s -c \
+    'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' \
+    prepare --lib "$app_dir/lib/libWorkbench.so" "$work_dir/camview-check" >/dev/null || camview_status=$?
+# 3 is camview's exit status for a patch that does not apply (EXIT_PATCH_FAILED
+# in cli.py). Anything else failed before or after the patch step, which means
+# the build itself is broken.
+if (( camview_status == 3 )); then
+    camview_patch=failed
+    echo "::warning title=camview patch::The camview web UI patch does not apply to $app_version, so this AppImage runs without the cloud camera; fix tools/cloud-camera/src/camview/patch.py and bump appimage/PACKAGE_REVISION" >&2
+elif (( camview_status != 0 )); then
+    echo "::error title=camview check::'camview prepare' failed with status $camview_status before it could check the web UI patch (python3 3.11 or newer missing, import error, or no lib/libWorkbench.so in the package?); see the log above" >&2
+    exit 1
 fi
+rm -rf "$work_dir/camview-check"
+find "$app_dir/camview" -name __pycache__ -type d -prune -exec rm -rf {} +
 chmod +x "$app_dir/AppRun"
 cp -a "$app_dir/share/AnycubicSlicerNext/resources" "$app_dir/resources"
 
@@ -115,16 +101,7 @@ cp "$icon_file" "$app_dir/.DirIcon"
 
 # appimagetool embeds this in the runtime's .upd_info section, which is where
 # AppImageUpdate reads it. A key in the .desktop file is not used.
-if [[ "$variant" == camview ]]; then
-    # An exact tag would pin the AppImage to the release it came from. The
-    # camview releases are published as pre-releases, and "latest-pre" follows
-    # only those, so this build never updates to the original stream (whose
-    # releases are regular ones) and the original never sees camview.
-    update_tag=latest-pre
-else
-    update_tag=latest
-fi
-update_information="gh-releases-zsync|gira0|anycubic-slicer-next|$update_tag|AnycubicSlicer${name_suffix}-x86_64.AppImage.zsync"
+update_information="gh-releases-zsync|gira0|anycubic-slicer-next|latest|AnycubicSlicer-x86_64.AppImage.zsync"
 
 # AppImageKit is archived, so this continuous build no longer changes. The
 # checksum makes sure the tool that packages the release is the one we tested.
@@ -137,8 +114,8 @@ if ! sha256sum --check --quiet <<< "$appimage_tool_sha256  $appimage_tool"; then
 fi
 chmod +x "$appimage_tool"
 
-versioned_appimage="$work_dir/AnycubicSlicer-${release_version}${name_suffix}-x86_64.AppImage"
-latest_appimage="$work_dir/AnycubicSlicer${name_suffix}-x86_64.AppImage"
+versioned_appimage="$work_dir/AnycubicSlicer-${release_version}-x86_64.AppImage"
+latest_appimage="$work_dir/AnycubicSlicer-x86_64.AppImage"
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$appimage_tool" \
     -u "$update_information" "$app_dir" "$versioned_appimage"
 cp "$versioned_appimage" "$latest_appimage"
@@ -153,6 +130,7 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
         printf 'versioned_appimage=%s\n' "$versioned_appimage"
         printf 'latest_appimage=%s\n' "$latest_appimage"
         printf 'zsync=%s\n' "$latest_appimage.zsync"
+        printf 'camview_patch=%s\n' "$camview_patch"
     } >> "$GITHUB_OUTPUT"
 fi
 

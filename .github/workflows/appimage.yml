@@ -1,7 +1,6 @@
 name: Build Anycubic Slicer AppImage
 
 on:
-  # The schedule and pushes build both variants.
   schedule:
     - cron: '17 3 * * *'
   # Packaging changes ship on merge when appimage/PACKAGE_REVISION is bumped. A
@@ -13,15 +12,6 @@ on:
       - 'tools/cloud-camera/**'
       - '.github/workflows/appimage.yml'
   workflow_dispatch:
-    inputs:
-      variant:
-        description: 'original: the regular AppImage. camview: AppImage with the cloud-camera tool, released as <version>-<revision>-camview. both: build both.'
-        type: choice
-        options:
-          - both
-          - original
-          - camview
-        default: both
 
 permissions:
   contents: read
@@ -33,15 +23,9 @@ concurrency:
 
 jobs:
   release:
-    name: ${{ matrix.variant }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-    strategy:
-      # One stream failing must not stop the other.
-      fail-fast: false
-      matrix:
-        variant: ${{ fromJSON(inputs.variant == 'original' && '["original"]' || inputs.variant == 'camview' && '["camview"]' || '["original","camview"]') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -56,7 +40,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ steps.version.outputs.app_version }}
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-          VARIANT: ${{ matrix.variant }}
         run: |
           if [[ -z "$APP_VERSION" ]]; then
             echo "No application version detected (upstream unavailable); skipping build."
@@ -64,20 +47,13 @@ jobs:
             exit 0
           fi
 
-          # The camview stream has its own tag and asset names, so it never
-          # touches the release (or the Latest badge) of the original stream.
           release_tag="$RELEASE_VERSION"
-          name_suffix=''
-          if [[ "$VARIANT" == camview ]]; then
-            release_tag="${RELEASE_VERSION}-camview"
-            name_suffix='-camview'
-          fi
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
 
           required_assets=$(printf '%s\n' \
-            "AnycubicSlicer-${RELEASE_VERSION}${name_suffix}-x86_64.AppImage" \
-            "AnycubicSlicer${name_suffix}-x86_64.AppImage" \
-            "AnycubicSlicer${name_suffix}-x86_64.AppImage.zsync")
+            "AnycubicSlicer-${RELEASE_VERSION}-x86_64.AppImage" \
+            "AnycubicSlicer-x86_64.AppImage" \
+            "AnycubicSlicer-x86_64.AppImage.zsync")
 
           view_status=0
           assets=$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>"$RUNNER_TEMP/view-error.txt") || view_status=$?
@@ -111,7 +87,6 @@ jobs:
         if: steps.release.outputs.should_build == 'true'
         env:
           EXPECTED_APP_VERSION: ${{ steps.version.outputs.app_version }}
-          VARIANT: ${{ matrix.variant }}
         run: ./appimage/build-latest.sh
 
       - name: Publish release when the release tag is new
@@ -121,20 +96,19 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
           RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
-          VARIANT: ${{ matrix.variant }}
+          CAMVIEW_PATCH: ${{ steps.build.outputs.camview_patch }}
           VERSIONED_APPIMAGE: ${{ steps.build.outputs.versioned_appimage }}
           LATEST_APPIMAGE: ${{ steps.build.outputs.latest_appimage }}
           ZSYNC: ${{ steps.build.outputs.zsync }}
         run: |
           revision="${RELEASE_VERSION##*-}"
-          # Extra create flags for camview only. Pre-release keeps AppImageUpdate
-          # on the camview stream (its update string follows "latest-pre"), and
-          # --latest=false means it can never take the Latest badge.
-          create_args=()
           notes="Anycubic Slicer Next $APP_VERSION as AppImage (packaging revision $revision). The AppImage includes AppImageUpdate metadata."
-          if [[ "$VARIANT" == camview ]]; then
-            create_args=(--latest=false --prerelease)
-            notes="Anycubic Slicer Next $APP_VERSION as AppImage (packaging revision $revision) with the camview cloud camera tool (run it with: <AppImage> camview run). Separate from the regular releases. The AppImage includes AppImageUpdate metadata and updates only from camview releases."
+          # Releases must stay regular ones (never pre-releases): the AppImage's
+          # update string follows "latest", which skips pre-releases.
+          if [[ "$CAMVIEW_PATCH" == failed ]]; then
+            notes+=" Cloud camera viewing does not work with this slicer version yet (the camview web UI patch does not apply); everything else is unaffected."
+          else
+            notes+=" Cloud printer cameras open in a browser window (needs python3 3.11 or newer and a Chromium-family browser or Firefox on the host); turn that off with CAMVIEW=0 or --no-camview."
           fi
 
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -150,7 +124,6 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "$RELEASE_TAG" \
               --notes "$notes" \
-              "${create_args[@]}" \
               "$VERSIONED_APPIMAGE" \
               "$LATEST_APPIMAGE" \
               "$ZSYNC"

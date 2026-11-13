@@ -122,7 +122,7 @@ window.addEventListener('beforeunload', () => { if (client) client.leave(); });
 const s = document.createElement('script');
 s.src = '/agora.js?t=' + encodeURIComponent(token);
 s.onload = poll;
-s.onerror = () => setStatus('Could not load the Agora SDK from the helper');
+s.onerror = () => setStatus('Could not load the Agora SDK. Its first use needs internet access to download it; close this window and press play again.');
 document.head.appendChild(s);
 </script>
 </body>

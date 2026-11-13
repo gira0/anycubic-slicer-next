@@ -1,6 +1,75 @@
 #!/bin/bash
 DIR=$(dirname -- "$(readlink -f -- "$0")")
 
+# Cloud camera support (tools/cloud-camera, docs/cloud-video-investigation.md).
+# The system WebKitGTK has no WebRTC, so the bundled camview helper patches a copy
+# of the Workbench web UI and shows cloud camera streams in a browser window.
+# It is on by default. Turn it off with CAMVIEW=0 in the environment or with
+# --no-camview as the first argument.
+#
+# All of this runs before the exports below, so python3 and the browser never
+# see the bundled libraries.
+camview() {
+    # exec: this function is the last thing its (sub)shell does. For the helper
+    # below that makes python3 a direct child of this script, which it checks.
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$DIR/camview${PYTHONPATH:+:$PYTHONPATH}" \
+        exec python3 -P -c 'import sys; from camview.cli import main; sys.argv[0] = "camview"; main()' "$@"
+}
+camview_python() {
+    # camview needs Python 3.11 or newer (older ones also reject -P).
+    python3 -P -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1
+}
+
+# "AppRun camview ..." runs the tool itself (camview run, camview prepare).
+if [ "${1:-}" = "camview" ] && [ -d "$DIR/camview/camview" ]; then
+    shift
+    if ! camview_python; then
+        echo "camview needs python3 (3.11 or newer) on the host." >&2
+        exit 1
+    fi
+    # "camview run" starts the slicer again, so it needs this AppImage's own path.
+    export CAMVIEW_APPIMAGE="${CAMVIEW_APPIMAGE:-${APPIMAGE:-}}"
+    camview "$@"
+fi
+
+if [ "${1:-}" = "--no-camview" ]; then
+    shift
+    CAMVIEW=0
+fi
+
+# Start the helper next to the slicer. It answers with the URL of the patched
+# web UI, which the slicer loads through ACNEXT_WORKBENCH_ENV_VAR. Anything that
+# is missing or fails (python3, a browser, a web UI the patch no longer fits)
+# leaves the variable unset and the slicer starts as it always did. A variable
+# that is already set is somebody else's override ("camview run" sets it too).
+if [ "${CAMVIEW:-1}" != "0" ] && [ -z "${ACNEXT_WORKBENCH_ENV_VAR:-}" ] \
+        && [ -d "$DIR/camview/camview" ] && camview_python; then
+    # A private directory: a name in a shared /tmp could be claimed by someone else.
+    if CAMVIEW_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/camview.XXXXXX" 2>/dev/null); then
+        # $$ stays the slicer's PID after the exec at the end; the helper exits
+        # when that process is gone.
+        camview sidecar --lib "$DIR/lib/libWorkbench.so" --parent-pid $$ \
+            --ready-file "$CAMVIEW_DIR/ready" </dev/null >&2 &
+        CAMVIEW_PID=$!
+        # The helper needs well under a second; wait at most ten.
+        for ((i = 0; i < 100; i++)); do
+            [ -s "$CAMVIEW_DIR/ready" ] && break
+            kill -0 "$CAMVIEW_PID" 2>/dev/null || break
+            sleep 0.1
+        done
+        if [ -s "$CAMVIEW_DIR/ready" ]; then
+            ACNEXT_WORKBENCH_ENV_VAR=$(cat "$CAMVIEW_DIR/ready")
+            export ACNEXT_WORKBENCH_ENV_VAR
+        else
+            # Too slow or failed (it said why): make sure it is not left behind.
+            kill "$CAMVIEW_PID" 2>/dev/null
+        fi
+        rm -rf "$CAMVIEW_DIR"
+    fi
+    unset CAMVIEW_DIR CAMVIEW_PID i
+fi
+unset -f camview camview_python
+
 export LD_LIBRARY_PATH="$DIR/lib:$DIR/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # FIXME: Slicer segfault workarounds (from OrcaSlicer)

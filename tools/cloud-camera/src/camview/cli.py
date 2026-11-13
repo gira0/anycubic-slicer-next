@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import patch, sdk, server
+from . import patch, sdk, server, sidecar
 
 # Exit status for a web UI patch that does not apply. appimage/build-latest.sh
 # uses it to tell that apart from every other failure (1, or 2 from argparse).
@@ -88,9 +88,24 @@ def cmd_run(args) -> int:
             httpd.shutdown()
 
 
+def cmd_sidecar(args) -> int:
+    return sidecar.run_sidecar(Path(args.lib), args.parent_pid, Path(args.ready_file))
+
+
 def main() -> None:
+    # Status lines must appear as they happen, also when stdout is not a terminal.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, OSError, ValueError):
+        pass
     p = argparse.ArgumentParser(prog="camview", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
+    # Not for people: this is how the AppImage's AppRun starts the helper.
+    sp = sub.add_parser("sidecar")
+    sp.add_argument("--lib", required=True)
+    sp.add_argument("--parent-pid", type=int, required=True)
+    sp.add_argument("--ready-file", required=True)
+    sp.set_defaults(fn=cmd_sidecar)
     for name, fn, help_ in (("run", cmd_run, "run the slicer with cloud camera support"),
                             ("prepare", cmd_prepare, "extract and patch the web UI into a directory")):
         sp = sub.add_parser(name, help=help_)

@@ -1,0 +1,2 @@
+# HOWTO.md has CRLF line endings; do not report them as trailing whitespace.
+appimage/HOWTO.md whitespace=cr-at-eol
