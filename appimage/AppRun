@@ -32,6 +32,18 @@ if [ "${1:-}" = "camview" ] && [ -d "$DIR/camview/camview" ]; then
     camview "$@"
 fi
 
+# A URL this script exported earlier is marked with CAMVIEW_WORKBENCH_URL. The
+# slicer passes its environment on to programs it starts (a file manager opened
+# from it, for example), and those pass it on to slicers they start. Such a URL
+# belongs to an earlier instance's helper, which deletes the page when that
+# instance exits, so drop it and let this instance start its own helper.
+if [ -n "${CAMVIEW_WORKBENCH_URL:-}" ]; then
+    if [ "${ACNEXT_WORKBENCH_ENV_VAR:-}" = "$CAMVIEW_WORKBENCH_URL" ]; then
+        unset ACNEXT_WORKBENCH_ENV_VAR
+    fi
+    unset CAMVIEW_WORKBENCH_URL
+fi
+
 if [ "${1:-}" = "--no-camview" ]; then
     shift
     CAMVIEW=0
@@ -59,7 +71,8 @@ if [ "${CAMVIEW:-1}" != "0" ] && [ -z "${ACNEXT_WORKBENCH_ENV_VAR:-}" ] \
         done
         if [ -s "$CAMVIEW_DIR/ready" ]; then
             ACNEXT_WORKBENCH_ENV_VAR=$(cat "$CAMVIEW_DIR/ready")
-            export ACNEXT_WORKBENCH_ENV_VAR
+            CAMVIEW_WORKBENCH_URL=$ACNEXT_WORKBENCH_ENV_VAR
+            export ACNEXT_WORKBENCH_ENV_VAR CAMVIEW_WORKBENCH_URL
         else
             # Too slow or failed (it said why): make sure it is not left behind.
             kill "$CAMVIEW_PID" 2>/dev/null
