@@ -10,7 +10,7 @@ workarounds unless a tested replacement is available.
 
 - The workflow is `.github/workflows/appimage.yml`. It runs daily, on pushes to
   `main` that touch `appimage/`, `tools/cloud-camera/` or the workflow, and on
-  manual dispatch. One matrix job per variant checks, builds and publishes.
+  manual dispatch. One job checks, builds and publishes.
 - `appimage/check-latest.sh` reads the Debian package `Version` from Anycubic's
   APT metadata and strips the epoch (`1:2.0.0.6` -> `2.0.0.6`). Current binaries
   no longer embed the application version, so do not go back to `strings`.
@@ -26,26 +26,30 @@ workarounds unless a tested replacement is available.
   `AnycubicSlicer-x86_64.AppImage`, and
   `AnycubicSlicer-x86_64.AppImage.zsync`.
 
-## Camview Variant
+## Cloud Camera (camview)
 
-- The schedule and pushes build both variants; a manual run picks `both`,
-  `original` or `camview`. The camview variant publishes a separate release
-  tagged `<version>-<revision>-camview`, created with `--latest=false --prerelease`,
-  with assets `AnycubicSlicer-<version>-<revision>-camview-x86_64.AppImage`,
-  `AnycubicSlicer-camview-x86_64.AppImage` and its `.zsync`.
-- `appimage/build-latest.sh` reads `VARIANT` (default `original`). The original
-  variant's output must stay identical. The camview variant ships
-  `tools/cloud-camera/src/camview` in the AppDir, and `appimage/AppRun.camview`
-  becomes its `AppRun`: `AppRun camview ...` runs the tool with the host
-  `python3`, anything else goes to the unchanged `AppRun`, kept as `AppRun.slicer`.
-- The camview build runs `camview prepare` against the new `libWorkbench.so` and
-  fails if the web UI patch no longer applies, so a broken camview AppImage is
-  never published. The original variant is unaffected (separate matrix job).
-- An earlier design that started camview automatically as an `AppRun` sidecar in
-  the regular AppImage is kept as the tag `archive/appimage-cloud-camera`.
-- The camview update string follows `latest-pre` (AppImageUpdate maps any other
-  value to one exact tag, which would pin the AppImage to its own release), so
-  camview releases must stay pre-releases and original releases must not be.
+- There is one AppImage and one release stream. It ships
+  `tools/cloud-camera/src/camview` in the AppDir, and `appimage/AppRun` starts it
+  as a helper next to the slicer (`camview sidecar`). Cloud camera support is on
+  by default; `CAMVIEW=0` in the environment or `--no-camview` as the first
+  argument turns it off. `AppRun camview ...` still runs the tool itself.
+- The helper must never keep the slicer from starting. `AppRun` waits for it at
+  most ten seconds, and anything missing or failing (host `python3` 3.11+, a
+  browser, a web UI the patch no longer fits) starts the slicer exactly as
+  before. Keep that property in any change to `AppRun` or `sidecar.py`, and keep
+  the helper start above the `LD_LIBRARY_PATH` export so `python3` and the
+  browser never load bundled libraries.
+- The helper downloads nothing at start. The Agora Web SDK is fetched when a
+  viewer first asks for it.
+- The build runs `camview prepare` against the new `libWorkbench.so`. A patch
+  that no longer applies is a warning, not a failure: the release is published
+  and its notes say that cloud camera viewing does not work yet. Fix `patch.py`
+  and bump the revision. Any other failure of that check fails the build.
+- Until `2.0.0.6-2` there was a separate camview stream (pre-releases tagged
+  `<version>-<revision>-camview`, update string `latest-pre`). It is no longer
+  built. Releases of the one stream must stay regular releases, because the
+  update string follows `latest`. An even earlier sidecar design is kept as the
+  tag `archive/appimage-cloud-camera`.
 
 ## Validation
 
@@ -56,7 +60,6 @@ bash -n appimage/check-latest.sh
 bash -n appimage/build-latest.sh
 bash -n appimage/fetch-upstream.sh
 bash -n appimage/AppRun
-bash -n appimage/AppRun.camview
 git diff --check
 ```
 
@@ -67,8 +70,8 @@ extract-and-run setup.
 ## Release Safety
 
 Do not commit generated AppImages, extracted Debian contents, or temporary build
-directories. Do not create a release for a release tag (version plus packaging revision,
-plus `-camview` for that stream) that already has all required assets.
+directories. Do not create a release for a release tag (version plus packaging
+revision) that already has all required assets.
 
 ## Documentation
 
@@ -80,4 +83,5 @@ plus `-camview` for that stream) that already has all required assets.
   modify `libWorkbench.so`. Keep `*.apk` files out of git.
 - `tools/cloud-camera/`: `camview`, a `uv` prototype that shows cloud printer
   cameras on Linux through a patched Workbench copy and a browser viewer window
-  (see its README). Run it with `uv run camview run --appimage PATH`.
+  (see its README). The AppImage starts it by default; to run the working tree
+  against an AppImage, use `uv run camview run --appimage PATH`.

@@ -1,4 +1,4 @@
-# camview (prototype)
+# camview
 
 View Anycubic **cloud** printer cameras on Linux. Upstream disables cloud video on
 Linux because the system WebKitGTK has no WebRTC (see
@@ -36,16 +36,23 @@ verified).
 `uv run camview prepare --appimage PATH OUT_DIR` writes the patched web UI to a
 directory for inspection.
 
-### Inside the camview AppImage
+### Inside the AppImage
 
-The `-camview` AppImage releases ship this tool (without `uv`). Run it with the host
-`python3` (3.11 or newer) and no `--appimage` argument:
+The AppImage ships this tool (without `uv`) and starts it automatically: `AppRun`
+runs `camview sidecar` with the host `python3` (3.11 or newer) next to the slicer,
+and the slicer loads the patched web UI. Nothing has to be typed.
 
-```bash
-./AnycubicSlicer-camview-x86_64.AppImage camview run
-```
-
-Any other arguments start the slicer as usual.
+- Turn it off with `CAMVIEW=0` in the environment or `--no-camview` as the first
+  argument.
+- If `python3`, a browser or a matching web UI is missing, the slicer starts
+  without the cloud camera. Started from a terminal, it prints a `camview:` line
+  that says why.
+- The patched web UI copy (about 70 MB) is kept in `~/.cache/camview/webui` while
+  the slicer runs and removed when it exits.
+- The Agora Web SDK is not downloaded at start, only when a viewer first opens.
+- `./AnycubicSlicer-x86_64.AppImage camview run` and `camview prepare` still work.
+  `camview run` is the same thing started by hand, and it reports problems
+  instead of falling back.
 
 ## Security notes
 

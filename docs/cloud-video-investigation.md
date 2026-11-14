@@ -96,6 +96,9 @@ vendor binary is modified. See `tools/cloud-camera/README.md`. Limits: Agora
 sessions only (not AWS-only printers), and the slicer UI keeps showing
 "connecting" after the hand-off.
 
+The AppImage ships camview and starts it by default (`appimage/AppRun`, off with
+`CAMVIEW=0` or `--no-camview`). Any failure starts the slicer without it.
+
 ## Experiments and dead ends
 
 ### Patching `libWorkbench.so` crashes the app

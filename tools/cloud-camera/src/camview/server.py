@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import parse_qs, urlparse
 
+from . import sdk
+
 SESSION_TTL = 120          # seconds a session stays available to the viewer
 VIEWER_ALIVE = 5           # viewer is "open" if it polled within this many seconds
 VIEWER_LAUNCH_GRACE = 30   # seconds a just-launched viewer gets to start polling
@@ -44,6 +46,18 @@ BROWSERS = (
 # Words in an executable name or Flatpak app id that mean a Firefox-based browser
 # (firefox-esr, librewolf, zen-browser, app.zen_browser.zen, waterfox, floorp, ...).
 GECKO_WORDS = frozenset(("firefox", "librewolf", "zen", "waterfox", "floorp", "icecat"))
+
+
+def log(msg: str) -> None:
+    """Print a status line; never fail because nobody is listening.
+
+    Started from a desktop launcher, the helper may have a closed stdout, and a
+    failing print must not break the request that wanted to report something.
+    """
+    try:
+        print(f"camview: {msg}", flush=True)
+    except (OSError, ValueError):
+        pass
 
 
 class Browser(NamedTuple):
@@ -94,9 +108,10 @@ def viewer_args(browser: Browser, url: str) -> list[str]:
 
 
 class State:
-    def __init__(self, token: str, sdk_path: Path, browser: Browser | None = None):
+    def __init__(self, token: str, sdk_path: Path | None, browser: Browser | None = None):
         self.token = token
-        self.sdk_path = sdk_path
+        self.sdk_path = sdk_path   # None: fetched when the first viewer asks for it
+        self._sdk_lock = threading.Lock()
         self.browser = browser
         self.closed = False
         self.close_seen = threading.Event()
@@ -140,6 +155,13 @@ class State:
                 return False
             self.launched_at = now
             return True
+
+    def sdk_file(self) -> Path:
+        """The verified Agora SDK, downloaded on first use (raises sdk.SdkError)."""
+        with self._sdk_lock:  # two viewers must not download it twice
+            if self.sdk_path is None:
+                self.sdk_path = sdk.ensure_sdk()
+            return self.sdk_path
 
     def new_ticket(self) -> str:
         with self.lock:
@@ -185,21 +207,21 @@ def _report_browser_exit(proc: subprocess.Popen, url: str) -> None:
     except subprocess.TimeoutExpired:
         return
     if status != 0:
-        print(f"camview: the browser command exited with status {status}; if no viewer window "
-              f"appeared, check CAMVIEW_BROWSER or open this URL in a browser: {url}")
+        log(f"the browser command exited with status {status}; if no viewer window "
+            f"appeared, check CAMVIEW_BROWSER or open this URL in a browser: {url}")
 
 
 def launch_viewer(state: State) -> None:
     url = f"http://127.0.0.1:{state.port}/viewer?ticket={state.new_ticket()}"
     if state.browser is None:
-        print(f"camview: no supported browser found; open this URL in one: {url}")
+        log(f"no supported browser found; open this URL in one: {url}")
         return
-    print("camview: opening the viewer window")
+    log("opening the viewer window")
     try:
         proc = subprocess.Popen(viewer_args(state.browser, url),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as e:
-        print(f"camview: could not start the browser ({e}); open this URL in one: {url}")
+        log(f"could not start the browser ({e}); open this URL in one: {url}")
         return
     threading.Thread(target=_report_browser_exit, args=(proc, url), daemon=True).start()
 
@@ -250,7 +272,12 @@ def make_handler(state: State):
             if not self._token_ok(q.get("t", [None])[0]):
                 return self._send(403)
             if url.path == "/agora.js":
-                return self._send(200, state.sdk_path.read_bytes(), "text/javascript; charset=utf-8")
+                try:
+                    body = state.sdk_file().read_bytes()
+                except (sdk.SdkError, OSError) as e:
+                    log(str(e))
+                    return self._send(502)
+                return self._send(200, body, "text/javascript; charset=utf-8")
             if url.path == "/session":
                 try:
                     since = int(q.get("since", ["0"])[0])
@@ -288,13 +315,13 @@ def make_handler(state: State):
             session = {"printer": printer, "shengwang": sw}
             if state.set_session(session):
                 launch_viewer(state)
-            print(f"camview: session received for printer {printer.get('id')}")
+            log(f"session received for printer {printer.get('id')}")
             self._send(204)
 
     return Handler
 
 
-def start_server(token: str, sdk_path: Path, browser: Browser | None = None) -> tuple[ThreadingHTTPServer, State]:
+def start_server(token: str, sdk_path: Path | None, browser: Browser | None = None) -> tuple[ThreadingHTTPServer, State]:
     state = State(token, sdk_path, browser)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     state.port = httpd.server_address[1]

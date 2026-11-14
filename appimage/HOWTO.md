@@ -138,6 +138,12 @@ sed -i 's|Icon=.*|Icon=AnycubicSlicer|' AnycubicSlicer.AppDir/AnycubicSlicer.des
 
 ### Step 6: Create AppRun Script
 
+The script below is the slicer launcher on its own. The real `appimage/AppRun`
+additionally starts the cloud camera helper before these lines (see
+`tools/cloud-camera/README.md`), and `build-latest.sh` copies
+`tools/cloud-camera/src/camview` to `AnycubicSlicer.AppDir/camview/camview`.
+Without that directory the real `AppRun` behaves like this one.
+
 ```bash
 cat > AnycubicSlicer.AppDir/AppRun <<'EOF'
 #!/bin/bash
@@ -251,6 +257,7 @@ The AppDir must have this structure for the app to work:
 ```
 AnycubicSlicer.AppDir/
 ├── AppRun                    # Launch script
+├── camview/camview/          # Cloud camera helper (optional, Python)
 ├── AnycubicSlicer.desktop    # Desktop integration file
 ├── AnycubicSlicer.png        # Icon
 ├── bin/
@@ -276,6 +283,8 @@ AnycubicSlicer.AppDir/
 3. **WebKit rendering fixes**: Environment variables to fix graphics/rendering issues with WebKit-based UI
 4. **LD_LIBRARY_PATH**: Ensures bundled application libraries are found
 5. **No `cd "$DIR"`**: Preserves filesystem access for file imports/exports
+6. **Cloud camera helper**: Started before the slicer, off with `CAMVIEW=0` or
+   `--no-camview`; any failure falls back to the plain slicer
 
 ### Resources Location
 
@@ -354,13 +363,10 @@ Releases are published to: https://github.com/gira0/anycubic-slicer-next
 
 Release format:
 - **Tag/Title**: The deb package version without epoch, plus the packaging
-  revision (e.g. `2.0.0.6-1`). The camview stream appends `-camview`
-  (e.g. `2.0.0.6-1-camview`) and is published as a pre-release.
+  revision (e.g. `2.0.0.6-3`).
 - **Notes**: `Anycubic Slicer Next <VERSION> as AppImage (packaging revision <N>). The AppImage includes AppImageUpdate metadata.`
 - **Assets**: `AnycubicSlicer-<VERSION>-<N>-x86_64.AppImage`, the stable
-  `AnycubicSlicer-x86_64.AppImage` and its `.zsync` (camview:
-  `AnycubicSlicer-<VERSION>-<N>-camview-x86_64.AppImage`,
-  `AnycubicSlicer-camview-x86_64.AppImage` and its `.zsync`)
+  `AnycubicSlicer-x86_64.AppImage` and its `.zsync`
 
 ## Credits
 
